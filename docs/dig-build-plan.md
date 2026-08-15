@@ -46,7 +46,7 @@ Acceptance criteria:
 Footprint: `.claude-plugin/marketplace.json`, `plugins/dig/.claude-plugin/plugin.json`, `plugins/dig/.mcp.json`, `plugins/dig/server/`, `plugins/dig/package.json`, lockfile, `plugins/dig/test/`, `.gitignore`.
 Not in this slice: any Spotify call, auth, skills.
 Depends on: nothing
-Status: not started
+Status: built
 
 ## Slice B — Auth: PKCE, loopback callback, token lifecycle, reference page
 Goal: A user with only a Client ID signs in through the browser and stays signed in across restarts, with the token-handling rules that prevent bricked installs.
@@ -179,8 +179,24 @@ Status: not started
 
 ## Build assumptions
 
+### 2026-08-15 · Slice A
+- userConfig field key is `spotify_client_id`; `title` is a required attribute per the plugins reference, added (spec silent on titles) · builder call
+- Server also reads `CLAUDE_PLUGIN_OPTION_SPOTIFY_CLIENT_ID` as a fallback alongside the `.mcp.json` env substitution, since Claude Code auto-exports options under that name · builder call
+- An unsubstituted `${user_config...}` placeholder in the env is treated as "unconfigured", same as blank · builder call
+- `dig_status` reports the data directory (`CLAUDE_PLUGIN_DATA`) path/existence/mode but does not create it — slice A stores nothing yet · builder call
+- `npm test` script is `node --test "test/*.test.mjs"` — the bare directory form errors on node v22 · builder call
+- Tool annotations already set on `dig_status` (R6 of slice C formalizes derivation later) · builder call
+
 ## Deviations
 
+### 2026-08-15 · Slice A
+- none
+
 ## Discovered
+
+### 2026-08-15 · Slice A
+- Live install stores the userConfig value in `~/.claude/settings.json` under `pluginConfigs["dig@dig"].options` in plaintext — fine for a public Client ID, worth remembering before any future field
+- `claude plugin install dig@dig --config spotify_client_id=` refuses an empty value; there is no CLI path to clear a configured option, only editing settings.json — relevant to slice G's recovery instructions
+- The data directory `~/.claude/plugins/data/dig-dig` is created by Claude Code itself at 0755 — slice B's token file must rely on its own 0600 file mode, not the directory
 
 ## Punch list
