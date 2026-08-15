@@ -46,7 +46,7 @@ Acceptance criteria:
 Footprint: `.claude-plugin/marketplace.json`, `plugins/dig/.claude-plugin/plugin.json`, `plugins/dig/.mcp.json`, `plugins/dig/server/`, `plugins/dig/package.json`, lockfile, `plugins/dig/test/`, `.gitignore`.
 Not in this slice: any Spotify call, auth, skills.
 Depends on: nothing
-Status: built
+Status: signed off with conditions
 
 ## Slice B — Auth: PKCE, loopback callback, token lifecycle, reference page
 Goal: A user with only a Client ID signs in through the browser and stays signed in across restarts, with the token-handling rules that prevent bricked installs.
@@ -200,3 +200,17 @@ Status: not started
 - The data directory `~/.claude/plugins/data/dig-dig` is created by Claude Code itself at 0755 — slice B's token file must rely on its own 0600 file mode, not the directory
 
 ## Punch list
+
+### 2026-08-15 — review: Slice A
+- MAJOR · plugins/dig/server/index.mjs:83-88 · malformed/invalid input silently dropped (no -32700/-32600) and handler throws mislabeled as parse failures with no reply · a corrupted or non-object request (e.g. `not json\n`, `null\n`, a batch array with ids) leaves the client hanging on that id forever · slice A review
+- MAJOR · plugins/dig/test/stdout-purity.test.mjs · a stdout write confined to an unexercised branch (ping, unknown-tool) passes the suite 9/9 green; `console["log"]` evades the stderr-only lint regex; server/ subdirectories are never scanned · proven by mutation: `process.stdout.write("junk\n")` in the ping handler runs green, then corrupts the protocol on the first real ping · slice A review
+- MAJOR · plugins/dig/server/index.mjs:46 · initialize echoes the client's protocolVersion instead of clamping to a supported set · a future host sends a breaking protocol version, the server claims to speak it, and divergence surfaces as silent misbehavior instead of a clean mismatch · slice A review
+- MINOR · plugins/dig/server/config.mjs:24 · `??` masks the CLAUDE_PLUGIN_OPTION fallback when SPOTIFY_CLIENT_ID is "" or an unsubstituted placeholder · a valid fallback value is ignored and the user is told to configure · slice A review
+- MINOR · plugins/dig/server/index.mjs:10 · VERSION duplicated across index.mjs/plugin.json/package.json with no drift guard · slice H bumps plugin.json to 1.0.0, serverInfo still says 0.1.0 · slice A review
+- MINOR · plugins/dig/server/index.mjs:74-90 · final request without trailing newline is discarded at stdin EOF · client that half-closes after last write loses that request · slice A review
+- MINOR · plugins/dig/server/index.mjs:74-77 · unbounded stdin buffer, no line-length cap · a broken client streaming without newlines OOMs the server · slice A review
+- MINOR · plugins/dig/server/status.mjs:33-36 · all statSync failures conflated with "not created yet", and a plain file reported as if a directory · status tool reports wrong diagnostics on EACCES/ENOTDIR · slice A review
+- MINOR · plugins/dig/server/index.mjs:52 · a notification-method request carrying an id gets no reply · misbehaving client hangs on it · slice A review
+- MINOR · plugins/dig/server/index.mjs:37 · unknown tool returned as isError tool result instead of -32602 protocol error · host-facing error lands in the model-facing channel · slice A review
+- MINOR · .gitignore:1-6 · no pattern for slice C's index cache or slice F's user-named snapshots · state file could be committed if ever written repo-side · slice A review
+- MINOR · plugins/dig/test/stdout-purity.test.mjs:16-32 · runSession asserts no exit code and has no timeout · nonzero-exit server passes; hung server stalls the suite indefinitely · slice A review
