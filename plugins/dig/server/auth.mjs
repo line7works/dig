@@ -52,7 +52,7 @@ function openBrowser(url) {
 }
 
 // Maps the post-exchange probe's failure to instructions (research §12).
-function mapProbeFailure(status, body) {
+export function mapProbeFailure(status, body) {
   if (status === 403) {
     const msg = typeof body?.error?.message === "string" ? body.error.message : "";
     if (/premium/i.test(msg)) return PREMIUM_403_MESSAGE;

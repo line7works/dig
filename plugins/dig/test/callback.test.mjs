@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { startCallbackServer, referencePage, escapeHtml, REGISTERED_REDIRECT_URI } from "../server/callback.mjs";
-import { pkcePair, SCOPES } from "../server/auth.mjs";
+import { pkcePair, SCOPES, mapProbeFailure, ALLOWLIST_403_MESSAGE } from "../server/auth.mjs";
 import { createHash } from "node:crypto";
 
 import { request } from "node:http";
@@ -79,6 +79,16 @@ test("pkce pair: S256 challenge matches verifier, scopes are exactly the four", 
     "playlist-modify-private", "playlist-modify-public",
     "playlist-read-collaborative", "playlist-read-private",
   ]);
+});
+
+test("probe 403 maps to the allowlist instructions (or Premium when named)", () => {
+  const allow = mapProbeFailure(403, { error: { message: "Check settings on developer.spotify.com/dashboard" } });
+  assert.equal(allow, ALLOWLIST_403_MESSAGE);
+  assert.match(allow, /User Management/);
+  assert.match(allow, /15 minutes/);
+  const premium = mapProbeFailure(403, { error: { message: "Active premium subscription required for the owner of the app." } });
+  assert.match(premium, /Premium subscription/);
+  assert.match(mapProbeFailure(500, {}), /unexpected error \(HTTP 500\)/);
 });
 
 test("hard timeout rejects the flow", async () => {

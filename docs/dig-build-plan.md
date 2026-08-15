@@ -187,10 +187,25 @@ Status: not started
 - `npm test` script is `node --test "test/*.test.mjs"` — the bare directory form errors on node v22 · builder call
 - Tool annotations already set on `dig_status` (R6 of slice C formalizes derivation later) · builder call
 
+### 2026-08-15 · Slice B
+- Added `dig_connect` tool to trigger the sign-in — the spec names no trigger; something must start the browser flow · builder call
+- `dig_connect` returns immediately; exchange + probe complete inside the callback HTTP request and the success page shows the connected name (R6), with dig_status reporting the outcome — avoids a tool call that blocks for minutes of browser time · builder call
+- Token file also stores `display_name` (non-secret) so dig_status can show who is connected without an API call · builder call
+- Token file stores `client_id` binding; a mismatch forces clean re-auth (research §4 pattern) · builder call
+- Reference page served at `/` and `/setup`; deny/state-mismatch also close the one-shot listener (a settled flow is over) · builder call
+- Wrong-account retry (R6) = success page instructs "sign out of Spotify in the browser, then dig_connect again" — no dedicated retry endpoint · builder call
+- Callback hard timeout 5 minutes; lock timeout 5s with 30s stale-break · builder call
+- Added `test/callback.test.mjs` (not named by an AC) to exercise the R2 hardening list for real · builder call
+
 ## Deviations
 
 ### 2026-08-15 · Slice A
 - none
+
+### 2026-08-15 · Slice B
+- AC5 test excludes `docs/dig-research-*.md` and `docs/dig-prd-*.md` from the tree grep (they quote Spotify's rules) · per user
+- AC5 exclusion extended to `docs/dig-build-plan.md` — its own AC5 line names the forbidden word; same class as the two ruled-on docs · builder call
+- Slice A MINOR punch-list items folded into this build (config fallback, version single-source, EOF flush, buffer cap, notification-with-id, unknown tool -32602, data-dir diagnostics, .gitignore patterns, runSession timeout/exit-code) · per user
 
 ## Discovered
 
