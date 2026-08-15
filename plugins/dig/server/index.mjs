@@ -9,6 +9,11 @@ import { checkClientId } from "./config.mjs";
 
 const VERSION = "0.1.0";
 
+// Protocol versions this server actually implements. Initialize negotiates:
+// echo the client's version only if we support it, else answer with our latest.
+const SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
+const LATEST_PROTOCOL = SUPPORTED_PROTOCOLS[0];
+
 // A missing or malformed Client ID must never prevent startup — tools answer
 // with setup instructions instead. Just note it on stderr.
 log(`server started, node ${process.version}, client id state: ${checkClientId().state}`);
@@ -38,17 +43,39 @@ function handleToolCall(id, params) {
   }
 }
 
+function sendError(id, code, message) {
+  send({ jsonrpc: "2.0", id: id === undefined ? null : id, error: { code, message } });
+}
+
+// A JSON-RPC id must be a string, number, or null; anything else means the
+// request is malformed and the error reply carries id null.
+function validId(id) {
+  return typeof id === "string" || typeof id === "number" || id === null ? id : null;
+}
+
 function handle(req) {
+  // Invalid Request (-32600): not a lone object (batches included — MCP
+  // dropped batching), or no string method. Silence here hangs the client.
+  if (typeof req !== "object" || req === null || Array.isArray(req)) {
+    sendError(null, -32600, "Invalid Request: expected a single JSON-RPC object");
+    return;
+  }
+  if (typeof req.method !== "string") {
+    sendError(validId(req.id), -32600, "Invalid Request: missing method");
+    return;
+  }
   const { id, method } = req;
   log(`<- ${method}`);
   switch (method) {
-    case "initialize":
+    case "initialize": {
+      const asked = req.params?.protocolVersion;
       reply(id, {
-        protocolVersion: req.params?.protocolVersion || "2025-06-18",
+        protocolVersion: SUPPORTED_PROTOCOLS.includes(asked) ? asked : LATEST_PROTOCOL,
         capabilities: { tools: {} },
         serverInfo: { name: "dig", version: VERSION },
       });
       break;
+    }
     case "notifications/initialized":
       break; // notification, no reply
     case "tools/list":
@@ -67,8 +94,29 @@ function handle(req) {
       break;
     default:
       if (id !== undefined) {
-        send({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });
+        sendError(validId(id), -32601, `Method not found: ${method}`);
       }
+  }
+}
+
+// Every request gets exactly one reply or is a true notification. A throw
+// from a handler is an Internal error (-32603), never a silent drop — and
+// never mislabeled as a parse failure.
+function dispatch(line) {
+  let req;
+  try {
+    req = JSON.parse(line);
+  } catch (err) {
+    log(`parse error: ${err?.message}: ${line.slice(0, 200)}`);
+    sendError(null, -32700, "Parse error");
+    return;
+  }
+  try {
+    handle(req);
+  } catch (err) {
+    log(`handler error on ${req?.method}: ${err?.stack || err}`);
+    const id = typeof req === "object" && req !== null && !Array.isArray(req) ? req.id : undefined;
+    if (id !== undefined) sendError(validId(id), -32603, "Internal error");
   }
 }
 
@@ -81,11 +129,7 @@ process.stdin.on("data", (chunk) => {
     const line = buf.slice(0, nl).trim();
     buf = buf.slice(nl + 1);
     if (!line) continue;
-    try {
-      handle(JSON.parse(line));
-    } catch (err) {
-      log(`unparseable line (${err?.message}): ${line.slice(0, 200)}`);
-    }
+    dispatch(line);
   }
 });
 

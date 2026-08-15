@@ -26,6 +26,16 @@ async function runSession(env) {
   child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
   child.stdin.write(rpc(2, "tools/list"));
   child.stdin.write(rpc(3, "tools/call", { name: "dig_status", arguments: {} }));
+  // Exercise every remaining branch so a stray stdout write anywhere in the
+  // server has nowhere to hide from this test: ping, unknown tool, unknown
+  // method, parse error, invalid requests (batch / non-object / no method).
+  child.stdin.write(rpc(4, "ping"));
+  child.stdin.write(rpc(5, "tools/call", { name: "dig_nope", arguments: {} }));
+  child.stdin.write(rpc(6, "no/such/method"));
+  child.stdin.write("this is not json\n");
+  child.stdin.write("[]\n");
+  child.stdin.write('"just a string"\n');
+  child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 7 }) + "\n");
   child.stdin.end();
   await once(child, "exit");
   return { stdout, stderr };
@@ -51,6 +61,25 @@ test("stdout carries only JSON-RPC through init + list + call (client id set)", 
   assert.ok(byId.get(2)?.result?.tools?.some((t) => t.name === "dig_status"), "dig_status listed");
   const call = byId.get(3)?.result;
   assert.ok(call?.content?.[0]?.text.includes("looks valid"), "dig_status reports valid id");
+  assert.deepEqual(byId.get(4)?.result, {}, "ping answered");
+  assert.equal(byId.get(5)?.result?.isError, true, "unknown tool errors");
+  assert.equal(byId.get(6)?.error?.code, -32601, "unknown method -> -32601");
+  assert.equal(byId.get(7)?.error?.code, -32600, "missing method -> -32600");
+  const parseErrors = frames.filter((f) => f.id === null && f.error?.code === -32700);
+  assert.equal(parseErrors.length, 1, "non-JSON line -> one -32700 with id null");
+  const invalid = frames.filter((f) => f.id === null && f.error?.code === -32600);
+  assert.equal(invalid.length, 2, "batch and non-object -> -32600 with id null");
+});
+
+test("initialize clamps unsupported protocol versions to a supported one", async () => {
+  const child = spawn(process.execPath, [SERVER], { env: { ...process.env }, stdio: ["pipe", "pipe", "pipe"] });
+  let stdout = "";
+  child.stdout.on("data", (d) => (stdout += d));
+  child.stdin.write(rpc(1, "initialize", { protocolVersion: "1999-01-01", capabilities: {} }));
+  child.stdin.end();
+  await once(child, "exit");
+  const init = parseFrames(stdout).find((f) => f.id === 1);
+  assert.equal(init.result.protocolVersion, "2025-06-18", "unsupported version negotiated down, never echoed");
 });
 
 test("server starts and answers with NO client id configured", async () => {
