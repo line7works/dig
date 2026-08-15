@@ -88,7 +88,7 @@ Acceptance criteria:
 Footprint: `plugins/dig/server/` (spotify client, queue, error map, index, read tools), `plugins/dig/test/`.
 Not in this slice: any write.
 Depends on: Slice B
-Status: not started
+Status: built
 
 ## Slice D — Matching engine, ported and proven
 Goal: The gated matching pipeline from `docs/dig-matching-reference.py` running in Node with its full test suite passing.
@@ -204,6 +204,18 @@ Status: not started
 - R4 "alternatives": added `verifyCandidates(wanted, candidates)` returning best + scored alternatives, each with verdict/score/reasons — the reference has no multi-candidate rank, but R4 names alternatives as evidence tools need · builder call
 - Python's dead `core_strict_full` branch in split_title (computed, never used) not ported · builder call
 
+### 2026-08-15 · Slice C
+- Feb 2026 renamed response shapes read with a legacy fallback (`row.item ?? row.track`; search container `body.items ?? body.tracks`) since the docs show the union of old and new worlds; live calls succeeded through the lenient reader · builder call
+- AC2's "under 60 tokens/track equivalent" asserted as <240 serialized chars per compact track (~4 chars/token) · builder call
+- `dig_find_in_playlist` matching is case- and accent-insensitive substring over title + artist names (spec silent on semantics; the slice-D matcher verifies proposals, not user find text, so it was not reused here) · builder call
+- Bounds chosen: playlist/list page cap 50 (the endpoint max), aggregate samples cap 10, `dig_get_tracks` cap 20 IDs per call (each ID is one request) · builder call
+- Find index is in-memory per server process, rebuilt on snapshot_id change — spec requires server-side, not persistent · builder call
+- Error copy's one home is `error-map.mjs`; the slice-B allowlist/Premium 403 strings moved there and `auth.mjs` imports/re-exports them (R5's "layer used by every tool") · builder call
+- `TokenStore.invalidateAccess()` added as the sanctioned 401-invalidation API (clears the in-memory access token only); the client treats a 401 as authoritative and refresh-retries exactly once (research §9; clears slice-B MINOR token-store.mjs:31's missing-API half) · builder call
+- 429 handling retries at most once per request: a second 429 after a honored short wait stops and reports rather than looping · builder call
+- `dig_status`/`dig_connect` tool defs rebuilt through the R6 derivation (`defineTool` access classes local/connect) so every tool, not just the read seven, derives its annotations · builder call
+- Server instructions delivered via the `instructions` field of the initialize result (1,667 bytes of the 2,048 budget) · builder call
+
 ## Deviations
 
 ### 2026-08-15 · Slice A
@@ -221,6 +233,9 @@ Status: not started
 ### 2026-08-15 · Slice D
 - none
 
+### 2026-08-15 · Slice C
+- none
+
 ## Discovered
 
 ### 2026-08-15 · Slice A
@@ -233,6 +248,10 @@ Status: not started
 - The reference page is unreachable during the step it matters most: it is served by the callback server, which needs a valid Client ID first — the setup instructions for app creation currently depend on the session's Claude improvising (it grepped the plugin source). Slice G's setup skill must carry the full pre-config instructions itself
 - Tony, on config UX: the user should never have to open /plugin → settings by hand. Slice G's setup skill should ask for the Client ID in chat and have Claude run `claude plugin install dig@dig --config spotify_client_id=<id>` itself
 - Config changes don't reach a running server — every config step needs an explicit "start a new chat" instruction (matches PRD §12's session-start finding)
+
+### 2026-08-15 · Slice C live AC1
+- Slice B's waived AC3 got its live exercise as planned: four separate fresh server processes reused the stored refresh token without re-auth (dig_status showed the connected account; all authed reads succeeded)
+- Live catalog search returned two distinct track IDs for the same recording (identical title, artist, and duration_ms) — the slice-D verifyCandidates tie-order MINOR (matching.mjs:342) is a real-world case, relevant when slice E wires the matcher
 
 ## Punch list
 
