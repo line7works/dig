@@ -88,7 +88,7 @@ Acceptance criteria:
 Footprint: `plugins/dig/server/` (spotify client, queue, error map, index, read tools), `plugins/dig/test/`.
 Not in this slice: any write.
 Depends on: Slice B
-Status: rejected
+Status: signed off
 
 ## Slice D — Matching engine, ported and proven
 Goal: The gated matching pipeline from `docs/dig-matching-reference.py` running in Node with its full test suite passing.
@@ -338,3 +338,10 @@ WAIVED (per user) · 2026-08-15 · MINOR · plugins/dig/server/matching.mjs:250 
 - MINOR · plugins/dig/server/index.mjs:113 · all tool replies now resolve async, so responses can land out of request order (verified live: 3,4,5 answered 4,3,5) — legal JSON-RPC, but a wire-order behavior change from slice A · slice C review
 - MINOR · plugins/dig/server/find-index.mjs:27-54 · snapshot fetched before paging: a playlist edit mid-build yields one torn answer (mixed pages stamped with the pre-change snapshot); self-heals on the next call since the meta re-fetch sees the newer snapshot · slice C review
 - MINOR · plugins/dig/server/token-store.mjs:215-219 · a 200 refresh response missing access_token caches {token: undefined} for ~1h — every call sends "Bearer undefined", burns its one 401 retry, re-refreshes each time · slice C review
+
+### 2026-08-15 — recheck: Slice C
+- BLOCKER · plugins/dig/server/read-tools.mjs:177-182 · (null playlist rows filtered out BEFORE position numbering and page accounting) · fixed — probed [null,A,B,C] limit=2: A at raw position 1, next offset advances by raw rows, no duplicate on page 2; all-null page reports unavailable_rows and still advances (no loop); mechanism now at read-tools.mjs:179-196
+- MAJOR · plugins/dig/server/find-index.mjs:51 · (index positions renumbered over the null-stripped array) · fixed — probed [null,X,null,Y]: find X returns raw playlist offset 1; positions assigned offset+rowIndex at find-index.mjs:48-51
+- MAJOR · plugins/dig/server/spotify-client.mjs:59-67 · (60-second wait cap enforced per request, not per tool call) · fixed — one waitBudget() per tool call threaded through every request (read-tools.mjs:327, find-index paging included); probed: first 429 RA=40 honored, second in the same call throws instead of sleeping; single-request RA>60 still stops immediately; budget logic at spotify-client.mjs:68-80
+- MAJOR · plugins/dig/server/error-map.mjs:58 · (/playlist/ substring-matches "/me/playlists" — allowlist 403 got the ownership copy) · fixed — anchored to ^\/playlists\/ at error-map.mjs:61; probed: /me/playlists 403 leads with the allowlist copy, /playlists/{id} keeps the ownership framing
+No fix-introduced defects found; suite 94/94
