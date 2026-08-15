@@ -299,3 +299,5 @@ WAIVED (per user) · 2026-08-15 · MAJOR · docs/dig-build-plan.md:65 · AC3's n
 
 ### 2026-08-15 — recheck: Slice D
 - MAJOR · plugins/dig/server/matching.mjs:97 · (norm()'s leading-track-number strip uses /(?=\w)/ without the u flag — JS \w is ASCII-only vs Python's Unicode \w) · fixed — executed in both runtimes: lookahead now [\p{L}\p{N}_]/u at matching.mjs:99, "07 東京"→"東京" and the 東京 verify case returns CONFIDENT matching Python; eight probe inputs (CJK, Hangul, ASCII, underscore, digit-after-number, 3-digit no-strip) byte-identical across Node and Python; regression test at matching.test.mjs:131-137; suite 70/70; no fix-introduced defects
+
+WAIVED (per user) · 2026-08-15 · MINOR · plugins/dig/server/matching.mjs:250 · R4's "per-gate outcomes" delivered as free-text reason strings; passing gates leave no numeric trace ("clean") — Tony ruled keep as-is (reference-faithful prose evidence suffices; structured fields only if slice E proves to need them)
