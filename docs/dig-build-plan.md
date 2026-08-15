@@ -103,7 +103,7 @@ Acceptance criteria:
 Footprint: `plugins/dig/server/matching.mjs` (or similar), `plugins/dig/test/matching.test.mjs`.
 Not in this slice: wiring into add-tracks (slice E).
 Depends on: Slice A (repo only — independent of B/C; may run in parallel)
-Status: not started
+Status: built
 
 ## Slice E — Additive writes
 Goal: Create, describe, add, and reorder — every add verified by the matcher first and every write verified by re-read after.
@@ -197,6 +197,13 @@ Status: not started
 - Callback hard timeout 5 minutes; lock timeout 5s with 30s stale-break · builder call
 - Added `test/callback.test.mjs` (not named by an AC) to exercise the R2 hardening list for real · builder call
 
+### 2026-08-15 · Slice D
+- Port covers exactly the functions `verify()` reaches (lev, SequenceMatcher ratio, token_sort, norm, split_title, gates, scoring); the Python file's measurement-only metric zoo (jaro, token_set, jaccard, trigram, bidi_substring, metric_table) is harness, not pipeline, and was not ported · builder call
+- difflib autojunk not replicated — it only engages at candidate strings ≥200 chars, beyond any normalized title compared here; noted in a code comment · builder call
+- The reference's feat-artist split on a bare `x` (splits inside words containing x) preserved verbatim as part of the faithful port · builder call
+- R4 "alternatives": added `verifyCandidates(wanted, candidates)` returning best + scored alternatives, each with verdict/score/reasons — the reference has no multi-candidate rank, but R4 names alternatives as evidence tools need · builder call
+- Python's dead `core_strict_full` branch in split_title (computed, never used) not ported · builder call
+
 ## Deviations
 
 ### 2026-08-15 · Slice A
@@ -210,6 +217,9 @@ Status: not started
 - AC5 test excludes `docs/dig-research-*.md` and `docs/dig-prd-*.md` from the tree grep (they quote Spotify's rules) · per user
 - AC5 exclusion extended to `docs/dig-build-plan.md` — its own AC5 line names the forbidden word; same class as the two ruled-on docs · builder call
 - Slice A MINOR punch-list items folded into this build (config fallback, version single-source, EOF flush, buffer cap, notification-with-id, unknown tool -32602, data-dir diagnostics, .gitignore patterns, runSession timeout/exit-code) · per user
+
+### 2026-08-15 · Slice D
+- none
 
 ## Discovered
 
