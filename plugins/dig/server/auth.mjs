@@ -40,6 +40,7 @@ export function pkcePair() {
 }
 
 function openBrowser(url) {
+  if (process.env.DIG_NO_BROWSER) return false; // tests: never open real tabs
   // macOS is the verified platform; xdg-open keeps it portable elsewhere.
   const cmd = process.platform === "darwin" ? "open" : "xdg-open";
   try {
@@ -68,15 +69,35 @@ export function activeSignIn() {
   return activeFlow;
 }
 
+// Plain-language outcomes for the failure paths, so dig_status never claims
+// "in progress" about a flow that already ended.
+function failureMessage(err) {
+  const m = err?.message ?? "";
+  if (/denied/.test(m)) return "You clicked Cancel on Spotify's screen, so nothing was connected. Ask Dig to connect again whenever you're ready.";
+  if (/timed out/.test(m)) return "The sign-in link expired (5 minutes passed without approval). Run dig_connect again for a fresh one.";
+  if (/state mismatch/.test(m)) return "The sign-in that came back didn't match the one Dig started, so it was refused for safety. Run dig_connect again.";
+  if (/superseded|cancelled/.test(m)) return "That sign-in was replaced by a newer one.";
+  return err?.publicMessage ?? "Sign-in didn't finish. Run dig_connect to try again.";
+}
+
 // Starts the browser sign-in. Returns immediately with the URLs; the
 // exchange + probe complete inside the callback request, and the result
-// lands in the token file and in activeFlow for dig_status to report.
+// lands in the token file and in the flow record for dig_status to report.
 export async function beginSignIn({ clientId, fetchImpl = fetch, store }) {
-  if (activeFlow?.close) activeFlow.close();
+  if (activeFlow) {
+    // Supersede: mark first so an in-flight callback of the old flow can no
+    // longer persist a token or report a result over the new flow's.
+    activeFlow.superseded = true;
+    activeFlow.close?.();
+  }
 
   const { verifier, challenge } = pkcePair();
   const state = b64url(randomBytes(24));
   const tokenStore = store ?? new TokenStore({ file: tokenFilePath(), fetchImpl });
+
+  // Each flow owns its record; all writes go through it, never the module
+  // variable, so a superseded flow cannot contaminate its successor.
+  const flow = { startedAt: Date.now(), close: null, result: null, referenceUrl: null, superseded: false };
 
   const listener = await startCallbackServer({
     state,
@@ -98,6 +119,13 @@ export async function beginSignIn({ clientId, fetchImpl = fetch, store }) {
         e.publicMessage = "Spotify rejected the sign-in handshake. Go back to Claude and ask Dig to connect again.";
         throw e;
       }
+      if (flow.superseded) {
+        // A newer dig_connect started while this exchange was in flight; its
+        // approval must not overwrite the newer flow's state or token.
+        const e = new Error("flow superseded during exchange");
+        e.publicMessage = "A newer sign-in was started, so this one was discarded. Finish the newest one, or run dig_connect again.";
+        throw e;
+      }
 
       // Probe immediately (R5): the allowlist 403 is the most likely
       // first-run failure and must surface here, not on the first real call.
@@ -106,12 +134,16 @@ export async function beginSignIn({ clientId, fetchImpl = fetch, store }) {
         const probeBody = await probe.json().catch(() => ({}));
         const e = new Error(`probe failed (${probe.status})`);
         e.publicMessage = mapProbeFailure(probe.status, probeBody);
-        activeFlow = { ...activeFlow, result: { ok: false, message: e.publicMessage } };
-        throw e;
+        throw e; // failureMessage/done-handler records it on the flow
       }
       const me = await probe.json().catch(() => ({}));
       const displayName = me?.display_name || me?.id || "your Spotify account";
 
+      if (flow.superseded) {
+        const e = new Error("flow superseded during probe");
+        e.publicMessage = "A newer sign-in was started, so this one was discarded. Finish the newest one, or run dig_connect again.";
+        throw e;
+      }
       // Persist only now: refresh token, absolute timestamp, client binding,
       // display name for status. Access token stays in memory.
       tokenStore.persist({
@@ -121,7 +153,7 @@ export async function beginSignIn({ clientId, fetchImpl = fetch, store }) {
         display_name: displayName,
       });
       tokenStore.access = { token: body.access_token, expiresAt: Date.now() + (body.expires_in ?? 3600) * 1000 - 60_000 };
-      activeFlow = { ...activeFlow, result: { ok: true, displayName } };
+      flow.result = { ok: true, displayName };
 
       // R6: show who connected and offer the wrong-account retry.
       return page("Dig — connected", `<h1>Connected as ${displayName === "your Spotify account" ? "you" : `<strong>${escapeHtml(displayName)}</strong>`}.</h1>
@@ -142,11 +174,18 @@ export async function beginSignIn({ clientId, fetchImpl = fetch, store }) {
     code_challenge: challenge,
   }).toString();
 
-  activeFlow = { startedAt: Date.now(), close: listener.close, result: null, referenceUrl: listener.referenceUrl };
+  flow.close = listener.close;
+  flow.referenceUrl = listener.referenceUrl;
+  activeFlow = flow;
   listener.done
     .then(() => log("sign-in flow completed"))
-    .catch((e) => log(`sign-in flow ended: ${e?.message}`))
-    .finally(() => { if (activeFlow) activeFlow.close = null; });
+    .catch((e) => {
+      log(`sign-in flow ended: ${e?.message}`);
+      // Every failure path leaves a reportable outcome on THIS flow — deny,
+      // timeout, state mismatch, exchange/probe failure — never "in progress".
+      if (!flow.result) flow.result = { ok: false, message: failureMessage(e) };
+    })
+    .finally(() => { flow.close = null; });
 
   const opened = openBrowser(authUrl.toString());
   return { authUrl: authUrl.toString(), referenceUrl: listener.referenceUrl, opened };

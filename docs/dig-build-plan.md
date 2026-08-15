@@ -256,3 +256,5 @@ Status: not started
 - MINOR · plugins/dig/test/stderr-only.test.mjs:22 · comment stripper truncates lines at "//" inside URL string literals · a stdout write after a URL on the same line escapes the lint · slice B review
 - MINOR · .gitignore:1 · no pattern for *.lock or token.json.tmp-* — the tmp file holds the plaintext refresh token · in-repo data-dir configuration plus a crash leaves an unignored token-bearing file one git add away · slice B review
 - MINOR · plugins/dig/server/token-store.mjs:31 · CLAUDE_PLUGIN_DATA trusted verbatim, no absolute-path/sanity validation; no token-invalidation API authored for slice C's 401-retry rule · hostile/odd env lands state in unexpected places; C must reach into store.access undocumented · slice B review
+
+WAIVED (per user) · 2026-08-15 · MAJOR · docs/dig-build-plan.md:65 · AC3's named verification cannot be performed — no authed tool exists in slice B, refresh machinery unproven against the live product — deferred by Tony to a later slice ("slice d"; the first slice shipping an authed live call exercises it)

@@ -7,8 +7,9 @@
 //   - a rotated refresh token is persisted BEFORE the new access token is used
 import {
   chmodSync, mkdirSync, openSync, closeSync, writeSync, fsyncSync, renameSync,
-  readFileSync, statSync, unlinkSync, rmSync,
+  readFileSync, statSync, unlinkSync, rmSync, utimesSync,
 } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { join, dirname } from "node:path";
 import { log } from "./log.mjs";
 
@@ -54,29 +55,48 @@ export function writeFileAtomic0600(file, contents) {
   renameSync(tmp, file);
 }
 
-// Exclusive lock via wx-open of a lockfile. Stale locks (holder crashed) are
-// broken after 30s. Returns a release function.
+// Exclusive lock via wx-open of a lockfile. Three guarantees the naive
+// version lacked: the holder heartbeats the lockfile's mtime so a live hold
+// is never "stale"; release only removes a lock this acquisition owns; and
+// breaking a stale lock claims it atomically via rename, so two breakers
+// cannot both proceed and neither can delete a freshly acquired live lock.
 export async function acquireLock(file, { timeoutMs = 5000, staleMs = 30_000 } = {}) {
   const lockPath = `${file}.lock`;
+  const owner = `${process.pid}:${randomBytes(8).toString("hex")}`;
   const start = Date.now();
   for (;;) {
     try {
       const fd = openSync(lockPath, "wx", 0o600);
-      writeSync(fd, String(process.pid));
+      writeSync(fd, owner);
+      fsyncSync(fd);
       closeSync(fd);
+      const beat = setInterval(() => {
+        try { const now = new Date(); utimesSync(lockPath, now, now); } catch { /* lock gone */ }
+      }, 5000);
+      beat.unref();
       return () => {
-        try { unlinkSync(lockPath); } catch { /* already gone */ }
+        clearInterval(beat);
+        try {
+          if (readFileSync(lockPath, "utf8") === owner) unlinkSync(lockPath);
+        } catch { /* already gone */ }
       };
     } catch (err) {
       if (err.code !== "EEXIST") throw err;
       try {
         if (Date.now() - statSync(lockPath).mtimeMs > staleMs) {
-          log(`breaking stale lock ${lockPath}`);
-          rmSync(lockPath, { force: true });
+          // Claim-by-rename: only one breaker wins the rename; a lock that
+          // was released-and-reacquired in the window renames a DIFFERENT
+          // inode path and the loser just retries.
+          const claim = `${lockPath}.stale-${owner.replace(":", "-")}`;
+          renameSync(lockPath, claim);
+          log(`broke stale lock ${lockPath}`);
+          rmSync(claim, { force: true });
           continue;
         }
-      } catch { /* raced with release */ }
-      if (Date.now() - start > timeoutMs) throw new Error(`timed out waiting for lock ${lockPath}`);
+      } catch { /* raced with release or another breaker */ }
+      if (Date.now() - start > timeoutMs) {
+        throw new Error(`timed out waiting for lock ${lockPath} — another Dig session may be refreshing; try again in a few seconds`);
+      }
       await new Promise((r) => setTimeout(r, 50));
     }
   }
@@ -120,7 +140,17 @@ export class TokenStore {
     this.access = null; // { token, expiresAt } — memory only, never persisted
   }
 
+  // Every path that touches the file demands a real path first — with
+  // CLAUDE_PLUGIN_DATA unset, `file` is null and naive string-building would
+  // write "null.lock"-style litter into the cwd (the banned class).
+  ensureFile() {
+    if (!this.file) {
+      throw new Error("Dig has no data directory (CLAUDE_PLUGIN_DATA is unset), so it cannot store or refresh the Spotify connection. Restart Claude Code; if it persists, reinstall the Dig plugin.");
+    }
+  }
+
   persist(record) {
+    this.ensureFile();
     writeFileAtomic0600(this.file, JSON.stringify(record, null, 2) + "\n");
   }
 
@@ -130,6 +160,7 @@ export class TokenStore {
 
   signOut() {
     this.access = null;
+    if (!this.file) return;
     try { unlinkSync(this.file); } catch { /* already gone */ }
   }
 
@@ -137,6 +168,7 @@ export class TokenStore {
   // refresh token is persisted before the returned access token can be used.
   async getAccessToken(clientId) {
     if (this.access && Date.now() < this.access.expiresAt) return this.access.token;
+    this.ensureFile();
     const release = await acquireLock(this.file);
     try {
       // A concurrent call on this instance may have refreshed while we waited.
@@ -150,6 +182,8 @@ export class TokenStore {
         this.signOut();
         throw new AuthExpiredError();
       }
+      // Bounded well under the lock's 30s staleness window, so a stalled
+      // request can never make a live hold look abandoned.
       const res = await this.fetch(TOKEN_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -158,6 +192,7 @@ export class TokenStore {
           refresh_token: record.refresh_token,
           client_id: clientId ?? record.client_id,
         }),
+        signal: AbortSignal.timeout(20_000),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {

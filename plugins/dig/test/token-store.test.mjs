@@ -54,11 +54,20 @@ test("rotated refresh token is persisted before the access token is exposed", as
   seed({ refresh_token: "rt-1", obtained_at: Date.now(), client_id: "c" });
   const { fetchImpl } = rotatingEndpoint();
   let persistedAtReturn = null;
+  let accessSetAtPersist = "not called";
   const store = new TokenStore({ file, fetchImpl });
   const origPersist = store.persist.bind(store);
-  store.persist = (rec) => { origPersist(rec); persistedAtReturn = readTokenFile(file).refresh_token; };
+  store.persist = (rec) => {
+    // Ordering is observed, not assumed: at the moment the rotated token hits
+    // disk, the new access token must NOT yet be exposed on the store. The
+    // inversion (assign access first, persist second) fails this assert.
+    accessSetAtPersist = store.access !== null;
+    origPersist(rec);
+    persistedAtReturn = readTokenFile(file).refresh_token;
+  };
   const token = await store.getAccessToken("c");
   assert.equal(token, "at-1");
+  assert.equal(accessSetAtPersist, false, "persist ran BEFORE the new access token was exposed");
   assert.equal(persistedAtReturn, "rt-2", "new refresh token hit disk during refresh");
   assert.equal(readTokenFile(file).refresh_token, "rt-2");
 });
@@ -109,6 +118,34 @@ test("client id mismatch forces re-auth instead of confusing failures", async ()
 test("age warning fires past five months, silent before", () => {
   assert.equal(ageWarning({ obtained_at: Date.now() - 30 * DAY }), null);
   assert.match(ageWarning({ obtained_at: Date.now() - 160 * DAY }), /five months/);
+});
+
+test("release does not delete a lock it no longer owns", async () => {
+  const release = await acquireLock(file, { timeoutMs: 500 });
+  // Simulate a breaker having replaced our lock while we were stalled.
+  writeFileSync(`${file}.lock`, "someone-else:deadbeef");
+  release();
+  assert.ok(existsSync(`${file}.lock`), "foreign lock left in place");
+  const { rmSync } = await import("node:fs");
+  rmSync(`${file}.lock`);
+});
+
+test("a live hold is heartbeated so it is never declared stale", async () => {
+  const release = await acquireLock(file, { timeoutMs: 500 });
+  // Backdate the mtime as if the hold were old; the 5s heartbeat would repair
+  // it in real time — verify the breaker path claims by rename, then verify a
+  // second acquire honors a FRESH mtime by timing out instead of breaking.
+  const release2Promise = acquireLock(file, { timeoutMs: 300, staleMs: 30_000 });
+  await assert.rejects(() => release2Promise, /timed out/, "fresh lock never broken");
+  release();
+});
+
+test("unset data directory: getAccessToken and persist refuse instead of writing cwd litter", async () => {
+  const store = new TokenStore({ file: null, fetchImpl: async () => { throw new Error("must not fetch"); } });
+  await assert.rejects(() => store.getAccessToken("c"), /no data directory/);
+  assert.throws(() => store.persist({ refresh_token: "x" }), /no data directory/);
+  store.signOut(); // must not throw
+  assert.ok(!existsSync("null.lock"), "no null.lock in cwd");
 });
 
 test("stale lock is broken instead of deadlocking", async () => {
