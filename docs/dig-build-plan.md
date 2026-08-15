@@ -5,7 +5,7 @@ Intent: Dig is a Line 7 product — a Claude Code plugin that lets Tony's non-te
 Full product requirements: `docs/dig-prd-2026-08-12.md`. Full research with sources: `docs/dig-research-2026-08-12.md` (authoritative where the two disagree). Both live in this repo. The builder MUST read both before slice A; requirements below cite them rather than restate every detail.
 
 Constraints:
-- Repo: `~/Developer/dig`, standalone. Public GitHub repo `tonycoon/dig` comes later — **creating the GitHub repo and any push happens only on Tony's explicit word** (his global git gates). All slices work locally.
+- Repo: `~/Developer/dig`, standalone. Public GitHub repo `line7works/dig` comes later (the `line7works` org exists as of 2026-08-15, created by Tony; his personal account is `tiny-tunnel-dot`) — **creating the GitHub repo and any push happens only on Tony's explicit word** (his global git gates). All slices work locally.
 - Language: Node, no Spotify SDK — call the REST API directly (research §5, §9). MCP protocol layer is the builder's choice (hand-rolled stdio was proven in `~/Developer/dig-plugin-test`; the official MCP SDK is acceptable since lockfile deps auto-install).
 - Plugin layout per research §5 "File layout": repo root is its own marketplace (`.claude-plugin/marketplace.json`), plugin at `plugins/dig/` with `.claude-plugin/plugin.json`, `.mcp.json`, `skills/`, `server/`, `package.json` **plus committed lockfile** (without it, deps silently never install).
 - Spotify API: the **February 2026 surface only** — `/playlists/{id}/items` (never `/tracks`), `items`/`item` response fields, `POST /me/playlists`, search limit max 10, no batch fetches, no `/recommendations`. The changelog is the authority, not the reference pages (research §2).
@@ -161,7 +161,7 @@ Goal: Everything a public day-one repo needs, ready for Tony's publish word — 
 Requirements:
 - R1: README: Premium requirement in the first paragraph above install instructions; own-playlists-only limit; six-month reconnect; macOS-is-what's-tested note; install = paste-one-sentence flow with the new-chat step; "Dig — a Line 7 product" footer (PRD §3, §8; decisions 2026-08-14/15).
 - R2: Premium stated in all five PRD §3 places — README, marketplace.json description, plugin.json description, setup skill step 0, runtime error (verify the first four here; the last two landed in G).
-- R3: Marketplace metadata final: names such that the PRD §8 install lines (`/plugin marketplace add tonycoon/dig`, `/plugin install dig@dig`) work as printed; version bumped to `1.0.0`.
+- R3: Marketplace metadata final: names such that the install lines `/plugin marketplace add line7works/dig` and `/plugin install dig@dig` work as printed (supersedes the PRD §8 `tonycoon/dig` lines); version bumped to `1.0.0`.
 - R4: A LICENSE file — Tony picks the license at this slice if not before (open question below).
 - R5: Auto-update is off by default for third-party marketplaces — README tells users how to get updates (research §5).
 - R6: Final sweeps: no-localhost test green, stdout-purity green, no token/state files in git history, full `npm test` green.
