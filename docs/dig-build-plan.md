@@ -103,7 +103,7 @@ Acceptance criteria:
 Footprint: `plugins/dig/server/matching.mjs` (or similar), `plugins/dig/test/matching.test.mjs`.
 Not in this slice: wiring into add-tracks (slice E).
 Depends on: Slice A (repo only — independent of B/C; may run in parallel)
-Status: built
+Status: signed off with conditions
 
 ## Slice E — Additive writes
 Goal: Create, describe, add, and reorder — every add verified by the matcher first and every write verified by re-read after.
@@ -285,3 +285,14 @@ WAIVED (per user) · 2026-08-15 · MAJOR · docs/dig-build-plan.md:65 · AC3's n
 - MAJOR · plugins/dig/server/auth.mjs:75 · (superseded flow's in-flight callback writes its result and refresh token into the NEW flow's state) · fixed — executed the exact race with a gated exchange: old approval persisted nothing, results land on per-flow records only
 - MAJOR · plugins/dig/server/token-store.mjs:40 · (with CLAUDE_PLUGIN_DATA unset, TokenStore writes "null.lock" into the cwd) · fixed — executed in a scratch cwd: getAccessToken/persist refuse with a clear error, signOut no-ops, cwd stays empty; guard at token-store.mjs:146-150
 - MAJOR · plugins/dig/test/token-store.test.mjs:53 · (rotation-ordering test cannot distinguish persist-before-use from persist-after) · fixed — the forbidden inversion mutation now fails the suite (32/34 on the mutated copy); ordering observed at token-store.test.mjs:59-70
+
+### 2026-08-15 — review: Slice D
+- MAJOR · plugins/dig/server/matching.mjs:97 · norm()'s leading-track-number strip uses /(?=\w)/ without the u flag — JS \w is ASCII-only vs Python's Unicode \w · "07 東京" normalizes unchanged in Node (Python strips to "東京"): a CJK/Hangul title with a leading track number is REJECTED where the reference returns CONFIDENT · slice D review
+- MINOR · plugins/dig/server/matching.mjs:336 · Math.round (half-up) vs Python banker's rounding on the reported score; can emit -0 · exact .0005-boundary score reports 0.813 vs reference 0.812 (verdict itself computed pre-round) · slice D review
+- MINOR · plugins/dig/server/matching.mjs:265 · reason strings use JSON.stringify list formatting vs Python list repr · downstream copy or tests written against the reference's reason strings won't match · slice D review
+- MINOR · plugins/dig/server/matching.mjs:71 · toks() splits on a literal space vs Python's any-whitespace split · a future caller passing a non-norm'd string ("a\tb") gets one token instead of two, silently changing similarity · slice D review
+- MINOR · plugins/dig/server/matching.mjs:87 · toLowerCase substituted for Python casefold without a ledger entry · no divergent input found (LIG+NFKD absorb known deltas) but the substitution is unrecorded · slice D review
+- MINOR · plugins/dig/test/matching.test.mjs:1 · suite asserts verdicts only, never scores or metric-primitive outputs · a future regression in levSim/sequenceMatcherRatio that shifts scores within a verdict bucket passes green · slice D review
+- MINOR · plugins/dig/server/matching.mjs:149 · verify() throws a raw TypeError on missing title/name/artists, and no adapter/typedef pins the candidate shape vs Spotify's raw item ({artists:[{name}]}, album object) · slice E passing an unmapped API item or a proposal missing a title crashes the tool instead of returning a verdict or validation error (faithful to reference; seam undocumented) · slice D review
+- MINOR · plugins/dig/server/matching.mjs:342 · verifyCandidates ties (equal verdict + score) resolve by input order, undocumented · two CONFIDENT masters of one song: "best" is whichever Spotify listed first · slice D review
+- MINOR · plugins/dig/server/matching.mjs:250 · R4's "per-gate outcomes" delivered as free-text reason strings; passing gates leave no numeric trace ("clean") · tool logic needing which-gate-failed or a score breakdown must parse strings — flagged as an open interpretation question to Tony, graded MINOR (faithful to reference; prose evidence likely suffices for slice E) · slice D review

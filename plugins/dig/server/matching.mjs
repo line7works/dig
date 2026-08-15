@@ -94,7 +94,9 @@ export function norm(s) {
   s = s.replace(/\s*\+\s*/g, " and ");
   s = Array.from(s, (c) => (PUNCT_DELETE.has(c) ? "" : c)).join("");
   s = s.replace(/[^0-9a-z぀-ヿ一-鿿가-힯]+/gu, " ");
-  s = s.replace(/^\s*\d{1,2}\s+(?=\w)/, ""); // leading track number
+  // leading track number — lookahead mirrors Python's Unicode \w (JS \w stays
+  // ASCII even under /u, which wrongly kept the prefix before CJK titles)
+  s = s.replace(/^\s*\d{1,2}\s+(?=[\p{L}\p{N}_])/u, "");
   return s.replace(/\s+/g, " ").trim();
 }
 

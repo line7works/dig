@@ -128,6 +128,17 @@ test("AC2 named regression cases are present", () => {
   for (const r of required) assert.ok(names.includes(r), `missing named case: ${r}`);
 });
 
+// Regression — norm()'s leading-track-number strip must be Unicode-aware like
+// Python's \w (JS \w is ASCII-only; the un-stripped prefix wrongly rejected
+// CJK titles the reference matches as CONFIDENT).
+test("track-number strip works before non-ASCII titles", () => {
+  const r = verify(
+    { title: "東京", artists: ["サカナクション"] },
+    { name: "07 東京", artists: ["サカナクション"] },
+  );
+  assert.equal(r.verdict, "CONFIDENT", `score=${r.score} reasons=${JSON.stringify(r.reasons)}`);
+});
+
 // R4 — structured evidence: per-gate outcomes, score, alternatives.
 test("R4 verdicts carry structured evidence", () => {
   const rejected = verify(
