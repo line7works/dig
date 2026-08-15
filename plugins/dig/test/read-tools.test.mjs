@@ -346,6 +346,74 @@ test("R5: validation failures are isError tool results and never reach the netwo
   assert.equal(world.requests.length, 0, "no Spotify traffic for invalid input");
 });
 
+// ---------- fix pins: null rows, per-tool wait budget, /me 403 copy ----------
+
+test("null playlist rows keep raw positions, advance pagination by raw count, and are reported as data", async () => {
+  // Playlist: [null, A, B, null, C] — nulls are local/unavailable tracks.
+  const tracks = [null, makeTrack(1, "Alpha"), makeTrack(2, "Beta"), null, makeTrack(3, "Gamma")];
+  const world = makeWorld({ playlists: { p: { name: "P", snapshot_id: "s1", tracks } } });
+  const { call } = makeRig(world);
+
+  const page1 = JSON.parse((await call("dig_list_playlist_tracks", { playlist_id: "p", limit: 2 })).text);
+  assert.deepEqual(page1.tracks.map((t) => [t.position, t.name]), [[1, "Alpha"]], "position is the RAW playlist offset");
+  assert.equal(page1.range.count, 2, "count is raw rows, not surviving tracks");
+  assert.equal(page1.unavailable_rows, 1);
+  assert.match(page1.next_call, /offset=2/, "next offset advances by raw rows — no duplicate row on page 2");
+
+  const page2 = JSON.parse((await call("dig_list_playlist_tracks", { playlist_id: "p", offset: 2, limit: 2 })).text);
+  assert.deepEqual(page2.tracks.map((t) => [t.position, t.name]), [[2, "Beta"]]);
+  assert.match(page2.next_call, /offset=4/);
+});
+
+test("a page of ALL null rows cannot loop pagination", async () => {
+  const tracks = [null, null, makeTrack(1, "Survivor")];
+  const world = makeWorld({ playlists: { p: { name: "P", snapshot_id: "s1", tracks } } });
+  const { call } = makeRig(world);
+  const page = JSON.parse((await call("dig_list_playlist_tracks", { playlist_id: "p", limit: 2 })).text);
+  assert.equal(page.tracks.length, 0);
+  assert.equal(page.unavailable_rows, 2);
+  assert.match(page.next_call, /offset=2/, "offset advances past the all-null page");
+});
+
+test("find index positions are raw playlist offsets even with null rows", async () => {
+  const tracks = [null, makeTrack(1, "Needle In Here"), null, makeTrack(2, "Other")];
+  const world = makeWorld({ playlists: { p: { name: "P", snapshot_id: "s1", tracks } } });
+  const { call } = makeRig(world);
+  const body = JSON.parse((await call("dig_find_in_playlist", { playlist_id: "p", query: "needle" })).text);
+  assert.equal(body.matches[0].position, 1, "position lines up with dig_list_playlist_tracks");
+});
+
+test("R4: the 60s wait cap spans a whole multi-request tool call, not each request", async () => {
+  const world = makeWorld({ playlists: { p: { name: "P", snapshot_id: "s1", tracks: [makeTrack(1, "Only")] } } });
+  const inner = world.fetch;
+  let n = 0;
+  // 1st and 3rd requests answer 429 Retry-After 40: the first 40s wait is
+  // honored (within the 60s budget); the second would exceed the remaining
+  // 20s and must stop the TOOL CALL even though 40s alone is under 60s.
+  world.fetch = async (url) => {
+    n += 1;
+    if (n === 1 || n === 3) {
+      return { ok: false, status: 429, headers: { get: (k) => (k.toLowerCase() === "retry-after" ? "40" : null) }, json: async () => ({}) };
+    }
+    return inner(url);
+  };
+  const { call, sleeps } = makeRig(world);
+  const r = await call("dig_find_in_playlist", { playlist_id: "p", query: "only" });
+  assert.equal(r.isError, true);
+  assert.match(r.text, /rate-limiting/i);
+  assert.deepEqual(sleeps, [40_000], "waited once, then the shared budget stopped the call");
+});
+
+test("R5: allowlist 403 on /me/playlists leads with the allowlist copy, not the ownership copy", async () => {
+  const world = makeWorld({});
+  world.nextResponses = [[403, { error: { status: 403, message: "Forbidden" } }]];
+  const { call } = makeRig(world);
+  const r = await call("dig_list_playlists", {});
+  assert.equal(r.isError, true);
+  assert.match(r.text, /^\*\*Spotify signed you in, but your app hasn't been told to let you use it\.\*\*/);
+  assert.doesNotMatch(r.text, /owns or collaborates/);
+});
+
 // ---------- R6: annotations from one authored field ----------
 
 test("R6: every tool's annotations are derived, complete, and honest about read-onlyness", () => {

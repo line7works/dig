@@ -55,7 +55,10 @@ export function mapSpotifyError(status, body, endpoint = "") {
   const apiMsg = typeof body?.error?.message === "string" ? body.error.message : "";
   if (status === 403) {
     if (/premium/i.test(apiMsg)) return PREMIUM_403_MESSAGE;
-    if (/playlist/.test(endpoint)) {
+    // Only a SPECIFIC playlist's endpoints suggest an ownership problem.
+    // /me/... endpoints (like /me/playlists) are the user's own data — a 403
+    // there is the allowlist trap, the most likely first-run failure.
+    if (/^\/playlists\//.test(endpoint)) {
       return `**Spotify refused access to that playlist.**
 Dig can only work on playlists your account owns or collaborates on — Spotify closed everything else (friends' playlists, Discover Weekly and other editorial lists) to apps like this one.
 

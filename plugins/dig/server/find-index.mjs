@@ -24,39 +24,43 @@ export class FindIndex {
 
   // Returns { snapshotId, name, tracks } where tracks carry their playlist
   // position. Rebuilds only when the snapshot_id moved.
-  async get(playlistId) {
+  async get(playlistId, budget) {
     const meta = await this.client.request(`/playlists/${encodeURIComponent(playlistId)}`, {
       query: { fields: "snapshot_id,name" },
+      budget,
     });
     const snapshotId = meta?.snapshot_id;
     const cached = this.cache.get(playlistId);
     if (cached && cached.snapshotId === snapshotId) return cached;
 
     log(`building find index for ${playlistId} (snapshot ${snapshotId})`);
+    // Positions are RAW playlist offsets: null rows (local/unavailable
+    // tracks) occupy a position even though they can't be indexed, and the
+    // positions handed back must line up with dig_list_playlist_tracks.
     const tracks = [];
+    let rawCount = 0;
     for (let offset = 0; ; offset += PAGE_LIMIT) {
       const page = await this.client.request(
         `/playlists/${encodeURIComponent(playlistId)}/items`,
-        { query: { fields: FIELDS.compact, limit: PAGE_LIMIT, offset } },
+        { query: { fields: FIELDS.compact, limit: PAGE_LIMIT, offset }, budget },
       );
       const rows = extractRows(page);
-      for (const row of rows) {
+      rows.forEach((row, i) => {
         const t = projectItemRow(row, "compact");
-        if (t) tracks.push(t);
-      }
-      const total = page?.total ?? tracks.length;
+        if (t) tracks.push({ position: offset + i, ...t });
+      });
+      rawCount += rows.length;
+      const total = page?.total ?? rawCount;
       if (rows.length === 0 || offset + PAGE_LIMIT >= total) break;
     }
-    // Position is the running order in which rows were paged.
-    tracks.forEach((t, i) => { t.position = i; });
-    const entry = { snapshotId, name: meta?.name, tracks };
+    const entry = { snapshotId, name: meta?.name, tracks, totalRows: rawCount };
     this.cache.set(playlistId, entry);
     return entry;
   }
 
   // Substring find over folded title + artist names.
-  async find(playlistId, query) {
-    const { snapshotId, name, tracks } = await this.get(playlistId);
+  async find(playlistId, query, budget) {
+    const { snapshotId, name, tracks } = await this.get(playlistId, budget);
     const q = foldText(query);
     const matches = tracks.filter(
       (t) => foldText(t.name).includes(q) || (t.artists ?? []).some((a) => foldText(a).includes(q)),

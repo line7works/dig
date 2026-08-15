@@ -9,7 +9,7 @@
 // arrive as mapped instructions (R5) and are returned as isError tool
 // results, never protocol errors.
 import { defineTool } from "./tool-def.mjs";
-import { spotify } from "./spotify-client.mjs";
+import { spotify, waitBudget } from "./spotify-client.mjs";
 import { FindIndex } from "./find-index.mjs";
 import { FIELDS, DETAIL_LEVELS, validDetail, extractRows, projectItemRow, projectTrack } from "./projection.mjs";
 import { AuthExpiredError } from "./token-store.mjs";
@@ -63,11 +63,11 @@ export function createReadTools({ client = spotify, index } = {}) {
           additionalProperties: false,
         },
       }),
-      handler: async (args) => {
+      handler: async (args, budget) => {
         const query = requireString(args, "query", "a search query");
         const detail = checkDetail(args);
         const limit = Math.min(Math.max(1, args?.limit ?? 5), SEARCH_MAX);
-        const body = await client.request("/search", { query: { q: query, type: "track", limit } });
+        const body = await client.request("/search", { query: { q: query, type: "track", limit }, budget });
         const container = body?.items ?? body?.tracks ?? {};
         const rows = container?.items ?? [];
         const tracks = rows.map((r) => projectTrack(r?.item ?? r?.track ?? r, detail));
@@ -96,10 +96,10 @@ export function createReadTools({ client = spotify, index } = {}) {
           additionalProperties: false,
         },
       }),
-      handler: async (args) => {
+      handler: async (args, budget) => {
         const offset = Math.max(0, args?.offset ?? 0);
         const limit = Math.min(Math.max(1, args?.limit ?? PAGE_LIMIT), PAGE_LIMIT);
-        const body = await client.request("/me/playlists", { query: { offset, limit } });
+        const body = await client.request("/me/playlists", { query: { offset, limit }, budget });
         const rows = extractRows(body);
         const playlists = rows.filter(Boolean).map((p) => ({
           id: p.id,
@@ -130,10 +130,11 @@ export function createReadTools({ client = spotify, index } = {}) {
           additionalProperties: false,
         },
       }),
-      handler: async (args) => {
+      handler: async (args, budget) => {
         const id = requireString(args, "playlist_id", "a playlist ID");
         const p = await client.request(`/playlists/${encodeURIComponent(id)}`, {
           query: { fields: "id,name,description,public,collaborative,snapshot_id,owner(display_name),items(total)" },
+          budget,
         });
         return jsonText({
           id: p?.id,
@@ -166,20 +167,33 @@ export function createReadTools({ client = spotify, index } = {}) {
           additionalProperties: false,
         },
       }),
-      handler: async (args) => {
+      handler: async (args, budget) => {
         const id = requireString(args, "playlist_id", "a playlist ID");
         const detail = checkDetail(args);
         const offset = Math.max(0, args?.offset ?? 0);
         const limit = Math.min(Math.max(1, args?.limit ?? PAGE_LIMIT), PAGE_LIMIT);
         const page = await client.request(`/playlists/${encodeURIComponent(id)}/items`, {
           query: { fields: FIELDS[detail], limit, offset },
+          budget,
         });
-        const tracks = extractRows(page).map((r) => projectItemRow(r, detail)).filter(Boolean);
-        const total = page?.total ?? offset + tracks.length;
+        // Positions and page advance count RAW rows: Spotify returns null for
+        // local/unavailable tracks, and dropping them before numbering would
+        // shift every later position and stall the offset (all-null page =
+        // infinite loop). Nulls are reported as data, not silently skipped.
+        const rows = extractRows(page);
+        const tracks = rows
+          .map((r, i) => {
+            const t = projectItemRow(r, detail);
+            return t ? { position: offset + i, ...t } : null;
+          })
+          .filter(Boolean);
+        const unavailable = rows.length - tracks.length;
+        const total = page?.total ?? offset + rows.length;
         return jsonText({
-          tracks: tracks.map((t, i) => ({ position: offset + i, ...t })),
-          range: { offset, count: tracks.length, total },
-          ...pageNote("dig_list_playlist_tracks", offset, tracks.length, total, `playlist_id="${id}"`),
+          tracks,
+          range: { offset, count: rows.length, total },
+          ...(unavailable > 0 ? { unavailable_rows: unavailable } : {}),
+          ...pageNote("dig_list_playlist_tracks", offset, rows.length, total, `playlist_id="${id}"`),
         });
       },
     },
@@ -200,10 +214,10 @@ export function createReadTools({ client = spotify, index } = {}) {
           additionalProperties: false,
         },
       }),
-      handler: async (args) => {
+      handler: async (args, budget) => {
         const id = requireString(args, "playlist_id", "a playlist ID");
         const query = requireString(args, "query", "text to find");
-        const { playlistName, totalTracks, matches } = await findIndex.find(id, query);
+        const { playlistName, totalTracks, matches } = await findIndex.find(id, query, budget);
         return jsonText({
           playlist: playlistName,
           query,
@@ -236,11 +250,11 @@ export function createReadTools({ client = spotify, index } = {}) {
           additionalProperties: false,
         },
       }),
-      handler: async (args) => {
+      handler: async (args, budget) => {
         const aId = requireString(args, "playlist_a", "the first playlist ID");
         const bId = requireString(args, "playlist_b", "the second playlist ID");
-        const a = await findIndex.get(aId);
-        const b = await findIndex.get(bId);
+        const a = await findIndex.get(aId, budget);
+        const b = await findIndex.get(bId, budget);
         const bIds = new Set(b.tracks.map((t) => t.id));
         const aIds = new Set(a.tracks.map((t) => t.id));
         const onlyA = a.tracks.filter((t) => !bIds.has(t.id));
@@ -282,7 +296,7 @@ export function createReadTools({ client = spotify, index } = {}) {
           additionalProperties: false,
         },
       }),
-      handler: async (args) => {
+      handler: async (args, budget) => {
         const ids = args?.track_ids;
         if (!Array.isArray(ids) || ids.length === 0 || !ids.every((x) => typeof x === "string" && x.trim() !== "")) {
           throw new ValidationError("**Missing track IDs.** Pass `track_ids` as a list of Spotify track ID strings.");
@@ -297,7 +311,7 @@ export function createReadTools({ client = spotify, index } = {}) {
         for (const id of ids) {
           // Deliberately sequential — the queue serializes anyway, and one
           // request per ID is the whole point of the cap.
-          const t = await client.request(`/tracks/${encodeURIComponent(id.trim())}`);
+          const t = await client.request(`/tracks/${encodeURIComponent(id.trim())}`, { budget });
           tracks.push(projectTrack(t, detail));
         }
         return jsonText({ tracks, count: tracks.length });
@@ -308,9 +322,11 @@ export function createReadTools({ client = spotify, index } = {}) {
   // Wrap every handler once: known failures become isError instructions.
   return tools.map(({ def, handler }) => ({
     def,
-    handler: async (args) => {
+    handler: async (args, budget) => {
       try {
-        return { text: await handler(args), isError: false };
+        // One wait budget per tool call: the R4 60s cap spans every request
+        // this invocation makes, not each request separately.
+        return { text: await handler(args, waitBudget()), isError: false };
       } catch (err) {
         if (
           err instanceof ValidationError ||

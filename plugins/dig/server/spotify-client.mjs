@@ -10,8 +10,16 @@ import { log } from "./log.mjs";
 const API_BASE = "https://api.spotify.com/v1";
 
 // Honor Retry-After exactly, but never block a tool call longer than this;
-// past it, stop and tell the user how long Spotify asked for.
+// past it, stop and tell the user how long Spotify asked for. The cap is per
+// TOOL CALL, not per request: multi-request tools pass one waitBudget()
+// object through every request they make, and each honored wait draws it
+// down, so a tool spanning many requests can never accumulate minutes of
+// silent blocking out of sub-60s waits.
 const MAX_WAIT_MS = 60_000;
+
+export function waitBudget() {
+  return { remainingMs: MAX_WAIT_MS };
+}
 
 export class SpotifyClient {
   constructor({ store, fetchImpl = fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
@@ -24,6 +32,7 @@ export class SpotifyClient {
   // Serialization: each request waits for every previously enqueued one,
   // success or failure, before touching the network.
   request(path, opts = {}) {
+    // opts.budget: a waitBudget() shared across one tool call's requests.
     const run = () => this.#execute(path, opts);
     const result = this.chain.then(run, run);
     // The chain itself never rejects; callers see errors on `result`.
@@ -31,7 +40,7 @@ export class SpotifyClient {
     return result;
   }
 
-  async #execute(path, { method = "GET", query } = {}) {
+  async #execute(path, { method = "GET", query, budget } = {}) {
     const id = checkClientId();
     if (id.state !== "ok") throw new SpotifyApiError(id.message, { endpoint: path });
 
@@ -58,12 +67,15 @@ export class SpotifyClient {
       }
       if (res.status === 429) {
         const retryAfter = Number(res.headers.get("retry-after")) || 1;
-        if (retried429 || retryAfter * 1000 > MAX_WAIT_MS) {
+        const waitMs = retryAfter * 1000;
+        const remaining = budget ? budget.remainingMs : MAX_WAIT_MS;
+        if (retried429 || waitMs > remaining) {
           throw new RateLimitError(retryAfter);
         }
         log(`429 on ${path}, waiting ${retryAfter}s (Retry-After)`);
         retried429 = true;
-        await this.sleep(retryAfter * 1000);
+        if (budget) budget.remainingMs -= waitMs;
+        await this.sleep(waitMs);
         continue;
       }
       if (!res.ok) {
