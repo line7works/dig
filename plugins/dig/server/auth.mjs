@@ -1,5 +1,5 @@
 // PKCE sign-in flow (research §5): Client ID only, never a secret. The
-// redirect URI is registered portless; the live port is chosen free at auth
+// redirect URI is registered with the fixed callback port (Spotify 2025 rules).
 // time by the callback server.
 import { randomBytes, createHash } from "node:crypto";
 import { spawn } from "node:child_process";

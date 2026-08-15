@@ -5,6 +5,6 @@
   "type": "module",
   "description": "Dig MCP server — Spotify playlist tools. A Line 7 product.",
   "scripts": {
-    "test": "node --test \"test/*.test.mjs\""
+    "test": "DIG_CALLBACK_PORT=0 node --test \"test/*.test.mjs\""
   }
 }

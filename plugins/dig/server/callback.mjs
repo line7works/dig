@@ -6,9 +6,13 @@
 import { createServer } from "node:http";
 import { log } from "./log.mjs";
 
-// The portless loopback literal registered on the Spotify dashboard; the
-// live redirect URI appends the port chosen free at auth time.
-export const REGISTERED_REDIRECT_URI = "http://127.0.0.1/callback";
+// Spotify's dashboard (2025 rules) rejects portless loopback URIs, so the
+// callback listener is pinned to a fixed port and the registered URI carries
+// it explicitly. Override with DIG_CALLBACK_PORT if 8888 is taken.
+export const CALLBACK_PORT = process.env.DIG_CALLBACK_PORT !== undefined
+  ? Number(process.env.DIG_CALLBACK_PORT) // 0 = ephemeral, used by the tests
+  : 8888;
+export const REGISTERED_REDIRECT_URI = `http://127.0.0.1:${CALLBACK_PORT}/callback`;
 
 export function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -51,7 +55,7 @@ Character for character — no slash at the end, <code>http</code> not <code>htt
 // for the success page (so the exchange can happen inline and the page can
 // show the connected account, per R6).
 export function startCallbackServer({ state, timeoutMs = 5 * 60 * 1000, renderResult }) {
-  return new Promise((resolveStart) => {
+  return new Promise((resolveStart, rejectStart) => {
     let settled = false;
     let settle;
     const done = new Promise((resolve, reject) => {
@@ -124,7 +128,15 @@ export function startCallbackServer({ state, timeoutMs = 5 * 60 * 1000, renderRe
     const exposedDone = done.finally(() => clearTimeout(timer));
     exposedDone.catch(() => {});
 
-    server.listen(0, "127.0.0.1", () => {
+    server.on("error", (e) => {
+      clearTimeout(timer);
+      const err = e.code === "EADDRINUSE"
+        ? new Error(`port ${CALLBACK_PORT} is already in use — set DIG_CALLBACK_PORT to a free port and register that redirect URI on the Spotify dashboard`)
+        : e;
+      settle(err);
+      rejectStart(err);
+    });
+    server.listen(CALLBACK_PORT, "127.0.0.1", () => {
       const port = server.address().port;
       log(`callback server on 127.0.0.1:${port}`);
       resolveStart({

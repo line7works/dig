@@ -202,6 +202,10 @@ Status: not started
 ### 2026-08-15 · Slice A
 - none
 
+### 2026-08-15 · Slice B (live walkthrough fix)
+- R1 changed: redirect URI registered WITH an explicit port (`http://127.0.0.1:8888/callback`), callback server pinned to 8888 (`DIG_CALLBACK_PORT` override; tests run with port 0) — Spotify's dashboard rejects the portless form the research promised ("This redirect URI is not secure"), verified live by Tony 2026-08-15; fix applied mid-walkthrough by the walkthrough session, adopted · per user
+- AC1 performed live by Tony 2026-08-15: fresh Spotify app registered following Dig's instructions (with mid-run improvisation noted in Discovered), sign-in completed — token persisted only after the post-exchange probe succeeded, observed in real time. AC2 verified: token.json in the plugin data dir at 0600, repo tree clean of state files
+
 ### 2026-08-15 · Slice B
 - AC5 test excludes `docs/dig-research-*.md` and `docs/dig-prd-*.md` from the tree grep (they quote Spotify's rules) · per user
 - AC5 exclusion extended to `docs/dig-build-plan.md` — its own AC5 line names the forbidden word; same class as the two ruled-on docs · builder call
@@ -213,6 +217,12 @@ Status: not started
 - Live install stores the userConfig value in `~/.claude/settings.json` under `pluginConfigs["dig@dig"].options` in plaintext — fine for a public Client ID, worth remembering before any future field
 - `claude plugin install dig@dig --config spotify_client_id=` refuses an empty value; there is no CLI path to clear a configured option, only editing settings.json — relevant to slice G's recovery instructions
 - The data directory `~/.claude/plugins/data/dig-dig` is created by Claude Code itself at 0755 — slice B's token file must rely on its own 0600 file mode, not the directory
+
+### 2026-08-15 · Slice B live walkthrough (Tony, AC1 in progress)
+- Spotify's dashboard now REJECTS portless loopback redirect URIs ("This redirect URI is not secure") despite the docs still describing them — research §5's portless plan is dead; fixed port 8888 adopted mid-walkthrough (see Deviations)
+- The reference page is unreachable during the step it matters most: it is served by the callback server, which needs a valid Client ID first — the setup instructions for app creation currently depend on the session's Claude improvising (it grepped the plugin source). Slice G's setup skill must carry the full pre-config instructions itself
+- Tony, on config UX: the user should never have to open /plugin → settings by hand. Slice G's setup skill should ask for the Client ID in chat and have Claude run `claude plugin install dig@dig --config spotify_client_id=<id>` itself
+- Config changes don't reach a running server — every config step needs an explicit "start a new chat" instruction (matches PRD §12's session-start finding)
 
 ## Punch list
 
