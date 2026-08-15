@@ -46,7 +46,7 @@ Acceptance criteria:
 Footprint: `.claude-plugin/marketplace.json`, `plugins/dig/.claude-plugin/plugin.json`, `plugins/dig/.mcp.json`, `plugins/dig/server/`, `plugins/dig/package.json`, lockfile, `plugins/dig/test/`, `.gitignore`.
 Not in this slice: any Spotify call, auth, skills.
 Depends on: nothing
-Status: signed off with conditions
+Status: signed off
 
 ## Slice B — Auth: PKCE, loopback callback, token lifecycle, reference page
 Goal: A user with only a Client ID signs in through the browser and stays signed in across restarts, with the token-handling rules that prevent bricked installs.
@@ -214,3 +214,8 @@ Status: not started
 - MINOR · plugins/dig/server/index.mjs:37 · unknown tool returned as isError tool result instead of -32602 protocol error · host-facing error lands in the model-facing channel · slice A review
 - MINOR · .gitignore:1-6 · no pattern for slice C's index cache or slice F's user-named snapshots · state file could be committed if ever written repo-side · slice A review
 - MINOR · plugins/dig/test/stdout-purity.test.mjs:16-32 · runSession asserts no exit code and has no timeout · nonzero-exit server passes; hung server stalls the suite indefinitely · slice A review
+
+### 2026-08-15 — recheck: Slice A
+- MAJOR · plugins/dig/server/index.mjs:83-88 · (malformed/invalid input silently dropped (no -32700/-32600) and handler throws mislabeled as parse failures with no reply) · fixed — verified live: parse error → -32700 id null, non-object/batch → -32600, forced handler throw → -32603; error paths now at index.mjs:105-121 (dispatch)
+- MAJOR · plugins/dig/test/stdout-purity.test.mjs · (a stdout write confined to an unexercised branch passes the suite green; console["log"] evades the lint; server/ subdirectories never scanned) · fixed — verified by mutation on copies: stdout.write in ping branch fails suite, console["log"] in unknown-tool fails, subdirectory file caught by recursive walk
+- MAJOR · plugins/dig/server/index.mjs:46 · (initialize echoes the client's protocolVersion instead of clamping to a supported set) · fixed — verified live: "1999-01-01" answered with "2025-06-18"; negotiation now at index.mjs:71-73 with regression test
