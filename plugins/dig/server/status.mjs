@@ -1,5 +1,7 @@
 import { statSync } from "node:fs";
 import { checkClientId } from "./config.mjs";
+import { readTokenFile, tokenAge, ageWarning } from "./token-store.mjs";
+import { activeSignIn } from "./auth.mjs";
 
 // dig_status: the one tool of slice A. Reports Client ID state, auth state
 // (always "none" until the auth slice lands), and the plugin data directory.
@@ -47,7 +49,25 @@ export function digStatus() {
     lines.push(id.state === "invalid" ? "Client ID: configured but wrong shape." : "Client ID: not configured.");
     lines.push("", id.message, "");
   }
-  lines.push("Spotify connection: not signed in yet (sign-in arrives in a later Dig version).");
+  lines.push(describeAuth());
   lines.push(describeDataDir());
   return lines.join("\n");
+}
+
+function describeAuth() {
+  const record = readTokenFile();
+  if (record?.refresh_token) {
+    const days = Math.floor((tokenAge(record) ?? 0) / 86_400_000);
+    const who = record.display_name ? ` as ${record.display_name}` : "";
+    const warn = ageWarning(record);
+    return `Spotify connection: signed in${who} (connected ${days === 0 ? "today" : `${days} days ago`}).${warn ? `\n${warn}` : ""}`;
+  }
+  const flow = activeSignIn();
+  if (flow && !flow.result) {
+    return "Spotify connection: sign-in in progress — finish approving in your browser, or run dig_connect again to restart.";
+  }
+  if (flow?.result && !flow.result.ok) {
+    return `Spotify connection: last sign-in did not finish.\n\n${flow.result.message}`;
+  }
+  return "Spotify connection: not signed in. Run dig_connect to sign in through your browser.";
 }

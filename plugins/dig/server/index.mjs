@@ -6,6 +6,7 @@
 import { readFileSync } from "node:fs";
 import { log } from "./log.mjs";
 import { STATUS_TOOL, digStatus } from "./status.mjs";
+import { CONNECT_TOOL, digConnect } from "./connect.mjs";
 import { checkClientId } from "./config.mjs";
 
 // Version is single-sourced from the plugin manifest so a release bump
@@ -23,7 +24,7 @@ const LATEST_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 // with setup instructions instead. Just note it on stderr.
 log(`server started, node ${process.version}, client id state: ${checkClientId().state}`);
 
-const TOOLS = [STATUS_TOOL];
+const TOOLS = [STATUS_TOOL, CONNECT_TOOL];
 
 function send(msg) {
   process.stdout.write(JSON.stringify(msg) + "\n");
@@ -37,12 +38,17 @@ function toolResult(id, text, isError = false) {
   reply(id, { content: [{ type: "text", text }], isError });
 }
 
-function handleToolCall(id, params) {
+async function handleToolCall(id, params) {
   const name = params?.name;
   switch (name) {
     case "dig_status":
       toolResult(id, digStatus());
       break;
+    case "dig_connect": {
+      const r = await digConnect();
+      toolResult(id, r.text, r.isError);
+      break;
+    }
     default:
       // Unknown tool is a host-facing protocol error (-32602), not a
       // model-facing isError result.
@@ -92,12 +98,11 @@ function handle(req) {
       reply(id, { tools: TOOLS });
       break;
     case "tools/call":
-      try {
-        handleToolCall(id, req.params);
-      } catch (err) {
+      // Async tools reply when they finish; a rejection still answers.
+      handleToolCall(id, req.params).catch((err) => {
         log(`tool error: ${err?.stack || err}`);
         toolResult(id, `Dig hit an internal error: ${err?.message || err}`, true);
-      }
+      });
       break;
     case "ping":
       reply(id, {});
