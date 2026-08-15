@@ -1,0 +1,6 @@
+node_modules/
+*.log
+.env
+tokens*.json
+*.snapshot.json
+.DS_Store
