@@ -103,7 +103,7 @@ Acceptance criteria:
 Footprint: `plugins/dig/server/matching.mjs` (or similar), `plugins/dig/test/matching.test.mjs`.
 Not in this slice: wiring into add-tracks (slice E).
 Depends on: Slice A (repo only — independent of B/C; may run in parallel)
-Status: signed off with conditions
+Status: signed off
 
 ## Slice E — Additive writes
 Goal: Create, describe, add, and reorder — every add verified by the matcher first and every write verified by re-read after.
@@ -296,3 +296,6 @@ WAIVED (per user) · 2026-08-15 · MAJOR · docs/dig-build-plan.md:65 · AC3's n
 - MINOR · plugins/dig/server/matching.mjs:149 · verify() throws a raw TypeError on missing title/name/artists, and no adapter/typedef pins the candidate shape vs Spotify's raw item ({artists:[{name}]}, album object) · slice E passing an unmapped API item or a proposal missing a title crashes the tool instead of returning a verdict or validation error (faithful to reference; seam undocumented) · slice D review
 - MINOR · plugins/dig/server/matching.mjs:342 · verifyCandidates ties (equal verdict + score) resolve by input order, undocumented · two CONFIDENT masters of one song: "best" is whichever Spotify listed first · slice D review
 - MINOR · plugins/dig/server/matching.mjs:250 · R4's "per-gate outcomes" delivered as free-text reason strings; passing gates leave no numeric trace ("clean") · tool logic needing which-gate-failed or a score breakdown must parse strings — flagged as an open interpretation question to Tony, graded MINOR (faithful to reference; prose evidence likely suffices for slice E) · slice D review
+
+### 2026-08-15 — recheck: Slice D
+- MAJOR · plugins/dig/server/matching.mjs:97 · (norm()'s leading-track-number strip uses /(?=\w)/ without the u flag — JS \w is ASCII-only vs Python's Unicode \w) · fixed — executed in both runtimes: lookahead now [\p{L}\p{N}_]/u at matching.mjs:99, "07 東京"→"東京" and the 東京 verify case returns CONFIDENT matching Python; eight probe inputs (CJK, Hangul, ASCII, underscore, digit-after-number, 3-digit no-strip) byte-identical across Node and Python; regression test at matching.test.mjs:131-137; suite 70/70; no fix-introduced defects
