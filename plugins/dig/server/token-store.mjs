@@ -158,6 +158,13 @@ export class TokenStore {
     return readTokenFile(this.file);
   }
 
+  // The sanctioned 401 path (research §9: a 401 is authoritative regardless
+  // of the local clock): drop the in-memory access token so the next
+  // getAccessToken() performs a real refresh. Touches nothing on disk.
+  invalidateAccess() {
+    this.access = null;
+  }
+
   signOut() {
     this.access = null;
     if (!this.file) return;

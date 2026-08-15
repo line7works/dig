@@ -7,6 +7,8 @@ import { readFileSync } from "node:fs";
 import { log } from "./log.mjs";
 import { STATUS_TOOL, digStatus } from "./status.mjs";
 import { CONNECT_TOOL, digConnect } from "./connect.mjs";
+import { createReadTools } from "./read-tools.mjs";
+import { SERVER_INSTRUCTIONS } from "./instructions.mjs";
 import { checkClientId } from "./config.mjs";
 
 // Version is single-sourced from the plugin manifest so a release bump
@@ -24,7 +26,15 @@ const LATEST_PROTOCOL = SUPPORTED_PROTOCOLS[0];
 // with setup instructions instead. Just note it on stderr.
 log(`server started, node ${process.version}, client id state: ${checkClientId().state}`);
 
-const TOOLS = [STATUS_TOOL, CONNECT_TOOL];
+// Registry: every tool is a { def, handler } pair; dispatch is by name so a
+// new tool cannot be listed without also being callable (and vice versa).
+const REGISTRY = [
+  { def: STATUS_TOOL, handler: async () => ({ text: digStatus(), isError: false }) },
+  { def: CONNECT_TOOL, handler: () => digConnect() },
+  ...createReadTools(),
+];
+const HANDLERS = new Map(REGISTRY.map((t) => [t.def.name, t.handler]));
+const TOOLS = REGISTRY.map((t) => t.def);
 
 function send(msg) {
   process.stdout.write(JSON.stringify(msg) + "\n");
@@ -40,20 +50,15 @@ function toolResult(id, text, isError = false) {
 
 async function handleToolCall(id, params) {
   const name = params?.name;
-  switch (name) {
-    case "dig_status":
-      toolResult(id, digStatus());
-      break;
-    case "dig_connect": {
-      const r = await digConnect();
-      toolResult(id, r.text, r.isError);
-      break;
-    }
-    default:
-      // Unknown tool is a host-facing protocol error (-32602), not a
-      // model-facing isError result.
-      sendError(validId(id), -32602, `Unknown tool: ${name}`);
+  const handler = HANDLERS.get(name);
+  if (!handler) {
+    // Unknown tool is a host-facing protocol error (-32602), not a
+    // model-facing isError result.
+    sendError(validId(id), -32602, `Unknown tool: ${name}`);
+    return;
   }
+  const r = await handler(params?.arguments ?? {});
+  toolResult(id, r.text, r.isError);
 }
 
 function sendError(id, code, message) {
@@ -86,6 +91,7 @@ function handle(req) {
         protocolVersion: SUPPORTED_PROTOCOLS.includes(asked) ? asked : LATEST_PROTOCOL,
         capabilities: { tools: {} },
         serverInfo: { name: "dig", version: VERSION },
+        instructions: SERVER_INSTRUCTIONS,
       });
       break;
     }

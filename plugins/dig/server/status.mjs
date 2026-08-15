@@ -1,4 +1,5 @@
 import { statSync } from "node:fs";
+import { defineTool } from "./tool-def.mjs";
 import { checkClientId } from "./config.mjs";
 import { readTokenFile, tokenAge, ageWarning } from "./token-store.mjs";
 import { activeSignIn } from "./auth.mjs";
@@ -6,19 +7,14 @@ import { activeSignIn } from "./auth.mjs";
 // dig_status: the one tool of slice A. Reports Client ID state, auth state
 // (always "none" until the auth slice lands), and the plugin data directory.
 
-export const STATUS_TOOL = {
+export const STATUS_TOOL = defineTool({
   name: "dig_status",
+  title: "Dig status",
+  access: "local",
   description:
     "Report Dig's current state: whether a Spotify Client ID is configured and looks valid, authentication state, and where Dig keeps its data.",
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
-  annotations: {
-    title: "Dig status",
-    readOnlyHint: true,
-    destructiveHint: false,
-    idempotentHint: true,
-    openWorldHint: false,
-  },
-};
+});
 
 function describeDataDir() {
   const dir = process.env.CLAUDE_PLUGIN_DATA;

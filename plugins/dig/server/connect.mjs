@@ -1,22 +1,18 @@
 import { checkClientId } from "./config.mjs";
 import { beginSignIn } from "./auth.mjs";
 import { dataDir } from "./token-store.mjs";
+import { defineTool } from "./tool-def.mjs";
 
 // dig_connect: starts the browser sign-in and returns immediately; the flow
 // finishes in the callback request and dig_status reports the outcome.
-export const CONNECT_TOOL = {
+export const CONNECT_TOOL = defineTool({
   name: "dig_connect",
+  title: "Connect to Spotify",
+  access: "connect",
   description:
     "Connect Dig to the user's Spotify account: opens the Spotify approval page in their browser and serves the local setup reference page. Returns immediately; call dig_status to see the result.",
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
-  annotations: {
-    title: "Connect to Spotify",
-    readOnlyHint: false,
-    destructiveHint: false,
-    idempotentHint: true,
-    openWorldHint: true,
-  },
-};
+});
 
 export async function digConnect() {
   const id = checkClientId();

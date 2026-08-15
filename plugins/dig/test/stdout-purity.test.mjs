@@ -62,6 +62,7 @@ test("stdout carries only JSON-RPC through init + list + call (client id set)", 
   const frames = parseFrames(stdout);
   const byId = new Map(frames.map((f) => [f.id, f]));
   assert.ok(byId.get(1)?.result?.serverInfo, "initialize answered");
+  assert.ok(byId.get(1)?.result?.instructions?.length > 0, "initialize carries server instructions (slice C R7)");
   assert.ok(byId.get(2)?.result?.tools?.some((t) => t.name === "dig_status"), "dig_status listed");
   const call = byId.get(3)?.result;
   assert.ok(call?.content?.[0]?.text.includes("looks valid"), "dig_status reports valid id");

@@ -14,20 +14,10 @@ const API_ME = "https://api.spotify.com/v1/me";
 // Exactly these four scopes; notably not user-read-email (research §9).
 export const SCOPES = "playlist-read-private playlist-read-collaborative playlist-modify-private playlist-modify-public";
 
-export const ALLOWLIST_403_MESSAGE = `**Spotify signed you in, but your app hasn't been told to let you use it.**
-Even though you own this app, Spotify makes you add yourself to it by hand.
-
-1. Open your app at developer.spotify.com/dashboard
-2. Click **Settings**, then the **User Management** tab
-3. Add your name and **the email address on your Spotify account**. If you have several addresses, it has to be that one.
-4. Wait about 15 minutes, then try again
-
-The 15 minutes is real. It won't work immediately.`;
-
-const PREMIUM_403_MESSAGE = `**Spotify requires a Premium subscription to run your own app.**
-This changed in February 2026 and applies to everyone, even for something as simple as reading your own playlist. There's no workaround.
-
-If you just subscribed, it can take a few hours before Spotify lets your app through.`;
+// The 403 copy lives in error-map.mjs (slice C) — one home for all error
+// instructions; re-exported here for existing importers.
+export { ALLOWLIST_403_MESSAGE } from "./error-map.mjs";
+import { ALLOWLIST_403_MESSAGE, PREMIUM_403_MESSAGE } from "./error-map.mjs";
 
 function b64url(buf) {
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
