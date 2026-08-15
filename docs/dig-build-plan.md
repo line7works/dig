@@ -68,7 +68,7 @@ Acceptance criteria:
 Footprint: `plugins/dig/server/` (auth, token store, callback+reference page), `plugins/dig/test/`.
 Not in this slice: playlist tools, setup skill prose (slice G polishes the walkthrough; this slice's instructions just have to be correct enough to complete AC1).
 Depends on: Slice A
-Status: not started
+Status: signed off with conditions
 
 ## Slice C — Read tools and context discipline
 Goal: Every read the product needs, live against Spotify, with responses that never flood the context window.
@@ -234,3 +234,25 @@ Status: not started
 - MAJOR · plugins/dig/server/index.mjs:83-88 · (malformed/invalid input silently dropped (no -32700/-32600) and handler throws mislabeled as parse failures with no reply) · fixed — verified live: parse error → -32700 id null, non-object/batch → -32600, forced handler throw → -32603; error paths now at index.mjs:105-121 (dispatch)
 - MAJOR · plugins/dig/test/stdout-purity.test.mjs · (a stdout write confined to an unexercised branch passes the suite green; console["log"] evades the lint; server/ subdirectories never scanned) · fixed — verified by mutation on copies: stdout.write in ping branch fails suite, console["log"] in unknown-tool fails, subdirectory file caught by recursive walk
 - MAJOR · plugins/dig/server/index.mjs:46 · (initialize echoes the client's protocolVersion instead of clamping to a supported set) · fixed — verified live: "1999-01-01" answered with "2025-06-18"; negotiation now at index.mjs:71-73 with regression test
+
+### 2026-08-15 — review: Slice B
+- MAJOR · plugins/dig/server/auth.mjs:145 · dig_status reports "sign-in in progress" forever after deny/state-mismatch/timeout/exchange-failure — activeFlow.result set only on success and probe-403 · user clicks Cancel then checks dig_status per dig_connect's own instruction and is told to keep waiting, permanently · slice B review
+- MAJOR · plugins/dig/server/token-store.mjs:59-83 · lock release has no ownership check, stale-break is TOCTOU, 30s staleness vs unbounded refresh fetch, no mtime heartbeat · >30s Spotify stall with two sessions → concurrent refresh of the same token → invalid_grant signOut deletes the fresh token file, both sessions signed out · slice B review
+- MAJOR · plugins/dig/server/auth.mjs:75 · superseded flow's in-flight callback writes its result and refresh token into the NEW flow's state — close() cannot cancel an accepted request · dig_connect twice, approve the first tab: old approval overwrites the newer sign-in and status reports the wrong outcome · slice B review
+- MAJOR · plugins/dig/server/token-store.mjs:40 · with CLAUDE_PLUGIN_DATA unset, TokenStore builds "null.lock" and writes it into the cwd — only dig_connect guards, not the store · slice C calls getAccessToken per request; unset-env config writes lock files into the user's project directory (banned class) · slice B review
+- MAJOR · plugins/dig/test/token-store.test.mjs:53 · rotation-ordering test cannot distinguish persist-before-use from persist-after — the R3-forbidden inversion passes 27/27 · future refactor inverts ordering, suite stays green, crash window bricks installs · slice B review
+- MAJOR · docs/dig-build-plan.md:65 · AC3's named verification cannot be performed — no authed tool exists in slice B, refresh machinery unproven against the live product · restart-reuses-token is only unit-tested; open question to Tony: defer to slice C or add a standalone exercise path · slice B review
+- MINOR · plugins/dig/test/callback.test.mjs:42 · `|| true` makes the self-contained-HTML assertion unconditionally pass · mitigation has no effective automated guard while reading as covered · slice B review
+- MINOR · plugins/dig/test/token-store.test.mjs:66 · crash-persist test verifies skipped-persist, not mid-write crash; atomicity itself unexercised · truncate-then-write mutant survives all but the incidental mode check · slice B review
+- MINOR · plugins/dig/test/no-localhost.test.mjs:29 · SKIP_FILES basename-matched at any depth, and walker scans untracked/ignored files · future same-named file anywhere is exempt; local scratch files can flake the suite · slice B review
+- MINOR · plugins/dig/test/token-store.test.mjs:14 · mkdtemp dirs never cleaned up · tmpdir accumulation per run · slice B review
+- MINOR · plugins/dig/server/token-store.mjs:105 · past six months ageWarning still says "about 0 days left" — no expired branch before invalid_grant fires · 8-month-old token reads as merely low on days · slice B review
+- MINOR · plugins/dig/server/callback.mjs:109 · state-mismatch-with-code and exchange-failure pages return HTTP 200 · scripted callers read errors as success · slice B review
+- MINOR · plugins/dig/server/callback.mjs:127 · no 'error' listener on the http server and no reject path for listen failure · dig_connect hangs (or process crashes) on EACCES/port exhaustion · slice B review
+- MINOR · plugins/dig/server/auth.mjs:97 · spawn ENOENT is an async error event with no listener — openBrowser try/catch doesn't cover it · on non-macOS without xdg-open the first dig_connect kills the whole MCP server · slice B review
+- MINOR · plugins/dig/server/index.mjs:150 · EOF-flush of a final unterminated line + synchronous process.exit loses async tool replies · trailing dig_connect at half-close gets zero replies — the fold's own guarantee broken for async tools · slice B review
+- MINOR · plugins/dig/server/auth.mjs:117 · sign-in persist and signOut write the token file outside the exclusive lock · completing sign-in interleaves with another session's locked read-refresh-write; file can describe the wrong account · slice B review
+- MINOR · plugins/dig/server/callback.mjs:88 · any local process hitting /callback consumes the one-shot listener via state-mismatch · sign-in denied by a localhost port-scan during the 5-minute window; recovery is rerunning dig_connect · slice B review
+- MINOR · plugins/dig/test/stderr-only.test.mjs:22 · comment stripper truncates lines at "//" inside URL string literals · a stdout write after a URL on the same line escapes the lint · slice B review
+- MINOR · .gitignore:1 · no pattern for *.lock or token.json.tmp-* — the tmp file holds the plaintext refresh token · in-repo data-dir configuration plus a crash leaves an unignored token-bearing file one git add away · slice B review
+- MINOR · plugins/dig/server/token-store.mjs:31 · CLAUDE_PLUGIN_DATA trusted verbatim, no absolute-path/sanity validation; no token-invalidation API authored for slice C's 401-retry rule · hostile/odd env lands state in unexpected places; C must reach into store.access undocumented · slice B review
