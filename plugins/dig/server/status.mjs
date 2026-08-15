@@ -26,9 +26,15 @@ function describeDataDir() {
   try {
     const st = statSync(dir);
     const mode = (st.mode & 0o777).toString(8).padStart(4, "0");
+    if (!st.isDirectory()) {
+      return `Data directory: ${dir} exists but is NOT a directory — Dig cannot store anything until it is removed or replaced with a folder.`;
+    }
     return `Data directory: ${dir} (exists, permissions ${mode})`;
-  } catch {
-    return `Data directory: ${dir} (not created yet — Dig creates it when it first has something to store)`;
+  } catch (err) {
+    if (err?.code === "ENOENT") {
+      return `Data directory: ${dir} (not created yet — Dig creates it when it first has something to store)`;
+    }
+    return `Data directory: ${dir} (cannot inspect: ${err?.code || err?.message})`;
   }
 }
 

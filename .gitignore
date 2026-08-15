@@ -1,6 +1,9 @@
-node_modules/
-*.log
-.env
-tokens*.json
-*.snapshot.json
 .DS_Store
+.env
+*.cache.json
+*.log
+*.snapshot.json
+node_modules/
+snapshots/
+token*.json
+tokens*.json

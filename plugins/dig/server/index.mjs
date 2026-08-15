@@ -3,11 +3,16 @@
 // dig-plugin-test). This file is the ONLY place allowed to write to stdout;
 // everything else logs through log.mjs to stderr.
 
+import { readFileSync } from "node:fs";
 import { log } from "./log.mjs";
 import { STATUS_TOOL, digStatus } from "./status.mjs";
 import { checkClientId } from "./config.mjs";
 
-const VERSION = "0.1.0";
+// Version is single-sourced from the plugin manifest so a release bump
+// cannot drift from what serverInfo reports.
+const VERSION = JSON.parse(
+  readFileSync(new URL("../.claude-plugin/plugin.json", import.meta.url), "utf8"),
+).version;
 
 // Protocol versions this server actually implements. Initialize negotiates:
 // echo the client's version only if we support it, else answer with our latest.
@@ -39,7 +44,9 @@ function handleToolCall(id, params) {
       toolResult(id, digStatus());
       break;
     default:
-      toolResult(id, `Unknown tool: ${name}`, true);
+      // Unknown tool is a host-facing protocol error (-32602), not a
+      // model-facing isError result.
+      sendError(validId(id), -32602, `Unknown tool: ${name}`);
   }
 }
 
@@ -77,7 +84,10 @@ function handle(req) {
       break;
     }
     case "notifications/initialized":
-      break; // notification, no reply
+      // A true notification gets no reply, but a misbehaving client that
+      // attached an id is owed a response or it hangs on it.
+      if (id !== undefined) reply(validId(id), {});
+      break;
     case "tools/list":
       reply(id, { tools: TOOLS });
       break;
@@ -120,10 +130,20 @@ function dispatch(line) {
   }
 }
 
+// Cap the line buffer: a client streaming without newlines must not OOM the
+// server. Real MCP frames are far below this.
+const MAX_LINE_BYTES = 4 * 1024 * 1024;
+
 let buf = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => {
   buf += chunk;
+  if (buf.length > MAX_LINE_BYTES && !buf.includes("\n")) {
+    log(`dropping oversized frame (${buf.length} bytes, no newline)`);
+    buf = "";
+    sendError(null, -32700, "Parse error: frame exceeds size limit");
+    return;
+  }
   let nl;
   while ((nl = buf.indexOf("\n")) !== -1) {
     const line = buf.slice(0, nl).trim();
@@ -133,4 +153,10 @@ process.stdin.on("data", (chunk) => {
   }
 });
 
-process.stdin.on("end", () => process.exit(0));
+process.stdin.on("end", () => {
+  // Flush a final request that arrived without a trailing newline before the
+  // client half-closed; otherwise it is silently lost.
+  const line = buf.trim();
+  if (line) dispatch(line);
+  process.exit(0);
+});

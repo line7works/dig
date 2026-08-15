@@ -21,13 +21,21 @@ Dig needs the Client ID of your own (free) Spotify developer app. To set it:
 
 Nothing else is broken — Dig just doesn't know which app is yours yet.`;
 
+function usable(raw) {
+  const v = (raw ?? "").trim();
+  // Empty, or an unsubstituted "${user_config...}" placeholder, is no value.
+  return v !== "" && !v.startsWith("${") ? v : null;
+}
+
 // Returns { state: "unconfigured" | "invalid" | "ok", clientId, message }.
-export function checkClientId(
-  raw = process.env.SPOTIFY_CLIENT_ID ?? process.env.CLAUDE_PLUGIN_OPTION_SPOTIFY_CLIENT_ID,
-) {
-  const value = (raw ?? "").trim();
-  if (value === "" || value.startsWith("${")) {
-    // Empty, or an unsubstituted "${user_config...}" placeholder.
+// The primary env var can be present-but-blank (the host always sets it), so
+// the fallback is consulted whenever the primary carries no usable value.
+export function checkClientId(raw) {
+  const value =
+    raw !== undefined
+      ? usable(raw)
+      : usable(process.env.SPOTIFY_CLIENT_ID) ?? usable(process.env.CLAUDE_PLUGIN_OPTION_SPOTIFY_CLIENT_ID);
+  if (value === null) {
     return { state: "unconfigured", clientId: null, message: UNCONFIGURED_MESSAGE };
   }
   if (!CLIENT_ID_SHAPE.test(value)) {

@@ -37,7 +37,11 @@ async function runSession(env) {
   child.stdin.write('"just a string"\n');
   child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 7 }) + "\n");
   child.stdin.end();
-  await once(child, "exit");
+  const [code] = await Promise.race([
+    once(child, "exit"),
+    new Promise((_, rej) => setTimeout(() => { child.kill("SIGKILL"); rej(new Error("server did not exit within 10s")); }, 10_000).unref()),
+  ]);
+  assert.equal(code, 0, `server exited nonzero (${code}); stderr: ${stderr.slice(0, 500)}`);
   return { stdout, stderr };
 }
 
@@ -62,7 +66,7 @@ test("stdout carries only JSON-RPC through init + list + call (client id set)", 
   const call = byId.get(3)?.result;
   assert.ok(call?.content?.[0]?.text.includes("looks valid"), "dig_status reports valid id");
   assert.deepEqual(byId.get(4)?.result, {}, "ping answered");
-  assert.equal(byId.get(5)?.result?.isError, true, "unknown tool errors");
+  assert.equal(byId.get(5)?.error?.code, -32602, "unknown tool -> -32602 protocol error");
   assert.equal(byId.get(6)?.error?.code, -32601, "unknown method -> -32601");
   assert.equal(byId.get(7)?.error?.code, -32600, "missing method -> -32600");
   const parseErrors = frames.filter((f) => f.id === null && f.error?.code === -32700);
