@@ -1,0 +1,11 @@
+{
+  "name": "dig",
+  "owner": { "name": "Line 7" },
+  "plugins": [
+    {
+      "name": "dig",
+      "source": "./plugins/dig",
+      "description": "Manage your own Spotify playlists by talking to Claude. Requires a Spotify Premium subscription (Spotify's rule for development-mode apps, not ours)."
+    }
+  ]
+}

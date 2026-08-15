@@ -1,0 +1,10 @@
+{
+  "name": "dig",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Dig MCP server — Spotify playlist tools. A Line 7 product.",
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
+  }
+}

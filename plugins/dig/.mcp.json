@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "dig": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server/index.mjs"],
+      "env": {
+        "SPOTIFY_CLIENT_ID": "${user_config.spotify_client_id}"
+      }
+    }
+  }
+}

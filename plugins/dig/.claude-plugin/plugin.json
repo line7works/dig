@@ -1,0 +1,12 @@
+{
+  "name": "dig",
+  "version": "0.1.0",
+  "description": "Spotify playlist tools: create, edit, reorder, dedupe, and grow playlists with verified tracks. Requires Spotify Premium. Dig — a Line 7 product.",
+  "userConfig": {
+    "spotify_client_id": {
+      "type": "string",
+      "title": "Spotify Client ID",
+      "description": "Your Spotify app's Client ID (32 letters and numbers, from developer.spotify.com/dashboard). Never paste your Client Secret."
+    }
+  }
+}
