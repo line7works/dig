@@ -68,7 +68,7 @@ Acceptance criteria:
 Footprint: `plugins/dig/server/` (auth, token store, callback+reference page), `plugins/dig/test/`.
 Not in this slice: playlist tools, setup skill prose (slice G polishes the walkthrough; this slice's instructions just have to be correct enough to complete AC1).
 Depends on: Slice A
-Status: signed off with conditions
+Status: signed off
 
 ## Slice C — Read tools and context discipline
 Goal: Every read the product needs, live against Spotify, with responses that never flood the context window.
@@ -258,3 +258,10 @@ Status: not started
 - MINOR · plugins/dig/server/token-store.mjs:31 · CLAUDE_PLUGIN_DATA trusted verbatim, no absolute-path/sanity validation; no token-invalidation API authored for slice C's 401-retry rule · hostile/odd env lands state in unexpected places; C must reach into store.access undocumented · slice B review
 
 WAIVED (per user) · 2026-08-15 · MAJOR · docs/dig-build-plan.md:65 · AC3's named verification cannot be performed — no authed tool exists in slice B, refresh machinery unproven against the live product — deferred by Tony to a later slice ("slice d"; the first slice shipping an authed live call exercises it)
+
+### 2026-08-15 — recheck: Slice B
+- MAJOR · plugins/dig/server/auth.mjs:145 · (dig_status reports "sign-in in progress" forever after deny/state-mismatch/timeout/exchange-failure) · fixed — executed: deny, forged state, and exchange failure each leave a reportable failed result rendered by dig_status; mechanism now at auth.mjs:180-188 (done.catch → failureMessage)
+- MAJOR · plugins/dig/server/token-store.mjs:59-83 · (lock release has no ownership check, stale-break is TOCTOU, 30s staleness vs unbounded refresh fetch, no mtime heartbeat) · fixed — executed: ownership-checked release leaves a foreign lock in place, stale-break claims by rename, refresh fetch bounded at 20s, heartbeat refreshes mtime every 5s (verified live); lock logic now at token-store.mjs:63-103
+- MAJOR · plugins/dig/server/auth.mjs:75 · (superseded flow's in-flight callback writes its result and refresh token into the NEW flow's state) · fixed — executed the exact race with a gated exchange: old approval persisted nothing, results land on per-flow records only
+- MAJOR · plugins/dig/server/token-store.mjs:40 · (with CLAUDE_PLUGIN_DATA unset, TokenStore writes "null.lock" into the cwd) · fixed — executed in a scratch cwd: getAccessToken/persist refuse with a clear error, signOut no-ops, cwd stays empty; guard at token-store.mjs:146-150
+- MAJOR · plugins/dig/test/token-store.test.mjs:53 · (rotation-ordering test cannot distinguish persist-before-use from persist-after) · fixed — the forbidden inversion mutation now fails the suite (32/34 on the mutated copy); ordering observed at token-store.test.mjs:59-70
