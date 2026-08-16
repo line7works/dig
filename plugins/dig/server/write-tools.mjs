@@ -13,7 +13,8 @@ import { spotify } from "./spotify-client.mjs";
 import { FindIndex } from "./find-index.mjs";
 import { extractRows, projectItemRow } from "./projection.mjs";
 import { verifyCandidates } from "./matching.mjs";
-import { SpotifyApiError } from "./error-map.mjs";
+import { RateLimitError, SpotifyApiError } from "./error-map.mjs";
+import { AuthExpiredError } from "./token-store.mjs";
 import { ValidationError, requireString, wrapTools } from "./read-tools.mjs";
 
 const SEARCH_LIMIT = 10; // Spotify's Feb 2026 search cap
@@ -258,20 +259,32 @@ export function createWriteTools({ client = spotify, index } = {}) {
             budget,
           });
         } catch (err) {
-          if (err instanceof SpotifyApiError) throw err; // definite failure — nothing landed
+          // Definite failures — Spotify rejected or never received the write
+          // (mapped API error, rate limit, expired auth): nothing landed, so
+          // surface the instruction instead of probing further. A 429 in
+          // particular means the write was NOT executed, and firing a re-read
+          // into an active rate limit only escalates it.
+          if (err instanceof SpotifyApiError || err instanceof RateLimitError || err instanceof AuthExpiredError) throw err;
           // Unknown outcome (timeout / network drop): never blind-retry an
           // add — fall through to the re-read to see whether it landed (R3).
         }
 
-        // Verify by re-read (R3): the window where the adds should be.
-        const { rows } = await readWindow(playlistId, insertAt, Math.min(uris.length + 5, 50), budget);
-        const seen = new Set(rows.map((r) => (r?.item ?? r?.track)?.uri).filter(Boolean));
-        const landed = toAdd.filter((t) => seen.has(t.uri));
-        const result = landed.length === toAdd.length ? "verified" : landed.length > 0 ? "partial" : "ambiguous";
+        // Verify by re-read (R3): POSITIONAL — each added uri must sit at its
+        // expected raw offset, and the playlist's total must have grown by the
+        // batch size. Mere presence-in-window would false-verify a silent
+        // failure whenever the track already sat nearby.
+        const { rows, total: totalAfter } = await readWindow(playlistId, insertAt, Math.min(uris.length + 5, 50), budget);
+        const windowUris = rows.map((r) => (r?.item ?? r?.track)?.uri ?? null);
+        const landed = toAdd.filter((t, k) => windowUris[k] === t.uri);
+        const countOk = totalAfter == null || totalAfter === totalBefore + uris.length;
+        const result =
+          landed.length === toAdd.length && countOk ? "verified"
+          : landed.length > 0 && landed.length < toAdd.length ? "partial"
+          : "ambiguous";
         return jsonText({
           result,
           added: landed.map(({ uri, ...t }) => t),
-          not_confirmed: result === "verified" ? undefined : toAdd.filter((t) => !seen.has(t.uri)).map(({ uri, ...t }) => t),
+          not_confirmed: result === "verified" ? undefined : toAdd.filter((t, k) => windowUris[k] !== t.uri).map(({ uri, ...t }) => t),
           questions,
           missing,
           note:
@@ -404,7 +417,21 @@ export function createWriteTools({ client = spotify, index } = {}) {
             if (isConcurrentEditError(err)) {
               return jsonText({ result: moves > 0 ? "partial" : "ambiguous", moves_applied: moves, note: REPLAN_NOTE });
             }
-            throw err;
+            // A definite failure (mapped API error, rate limit, expired auth)
+            // before ANY move applied left the playlist untouched — surface
+            // the instruction as-is; "nothing was lost" is then true.
+            const definite = err instanceof SpotifyApiError || err instanceof RateLimitError || err instanceof AuthExpiredError;
+            if (definite && moves === 0) throw err;
+            // Anything mid-flight leaves the playlist in an intermediate
+            // order (a definite failure after N moves, or an unknown outcome
+            // whose move may or may not have landed). Never report that as
+            // "nothing was lost" — state the partial truth and say re-plan.
+            const cause = definite ? err.message : `The last move's outcome could not be confirmed (${err?.message ?? err}).`;
+            return jsonText({
+              result: moves > 0 ? "partial" : "ambiguous",
+              moves_applied: moves,
+              note: `Reorder stopped early: ${moves} of the planned moves were applied, so the playlist is in an INTERMEDIATE order. ${cause}\n\nRe-read the playlist (dig_list_playlist_tracks) and re-plan the remaining moves from its current state.`,
+            });
           }
           snapshot = resp?.snapshot_id ?? snapshot;
           cur.splice(i, 0, cur.splice(j, 1)[0]);

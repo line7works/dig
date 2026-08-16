@@ -129,10 +129,40 @@ const parse = (r) => JSON.parse(r.text);
 
 // ---------- R2: uncertain is NEVER auto-added ----------
 
-test("AC2/R2: an uncertain match comes back as a question with evidence and is never added", async () => {
+test("AC2/R2: a genuinely UNCERTAIN match comes back as a question with evidence and is NEVER added", async () => {
   const world = makeWorld({ playlists: { pl: { name: "Mix", snapshot_id: "s1", tracks: [] } } });
-  // "Grass" vs proposal "Sweetgrass" — the canonical near-miss: passes
-  // nothing better than UNCERTAIN/REJECTED, must never be written.
+  // Same title + artist, wrong remembered duration (untrusted, so it scores
+  // instead of vetoing): title 1.0·0.40 + artist 1.0·0.30 + duration 0·0.20
+  // over weight 0.90 = 0.778 — squarely in the UNCERTAIN bucket (0.70-0.90).
+  world.searchHits = [
+    { item: makeTrack(1, "Night Drive", ["Echo Chamber"], 180_000) },
+    { item: makeTrack(2, "Night Drive", ["Echo Chamber"], 178_000) },
+  ];
+  const { call } = makeRig(world);
+  const res = parse(await call("dig_add_tracks", {
+    playlist_id: "pl",
+    tracks: [{ title: "Night Drive", artist: "Echo Chamber", duration_seconds: 300 }],
+  }));
+  // Unconditional: this fixture MUST take the questions path. If it lands in
+  // missing/added instead, the matcher or the gate changed and this fails.
+  assert.equal(res.result, "no_write");
+  assert.equal(res.added.length, 0);
+  assert.equal(res.questions.length, 1, "the uncertain proposal comes back as a question");
+  assert.equal(res.missing.length, 0);
+  assert.equal(world.writes.length, 0, "no write request may be issued for an unconfident batch");
+  assert.equal(world.playlists.pl.tracks.length, 0);
+  const q = res.questions[0];
+  assert.equal(q.closest.verdict, "UNCERTAIN");
+  assert.equal(typeof q.closest.score, "number");
+  assert.ok(q.closest.score >= 0.7 && q.closest.score < 0.9, `score ${q.closest.score} in the uncertain band`);
+  assert.ok(Array.isArray(q.closest.reasons) && q.closest.reasons.length > 0, "question carries the matcher's evidence");
+  assert.ok(Array.isArray(q.alternatives) && q.alternatives.length === 1, "alternatives surfaced");
+  assert.equal(q.alternatives[0].verdict, "UNCERTAIN");
+  assert.match(q.note, /not added/i);
+});
+
+test("R2: a rejected near-miss is reported as missing with the matcher's reason, never added", async () => {
+  const world = makeWorld({ playlists: { pl: { name: "Mix", snapshot_id: "s1", tracks: [] } } });
   world.searchHits = [
     { item: makeTrack(1, "Grass", ["Prairie Sound"]) },
     { item: makeTrack(2, "Sweetgrass (Live)", ["Prairie Sound"]) },
@@ -144,17 +174,9 @@ test("AC2/R2: an uncertain match comes back as a question with evidence and is n
   }));
   assert.equal(res.result, "no_write");
   assert.equal(res.added.length, 0);
-  assert.equal(world.writes.length, 0, "no write request may be issued for an unconfident batch");
-  assert.equal(world.playlists.pl.tracks.length, 0);
-  // Whether it surfaced as a question or a miss, it carries the matcher's
-  // evidence; a version-tagged sibling must surface with verdict + reasons.
-  const all = [...res.questions, ...res.missing];
-  assert.equal(all.length, 1);
-  if (res.questions.length) {
-    const q = res.questions[0];
-    assert.ok(q.closest.verdict === "UNCERTAIN");
-    assert.ok(Array.isArray(q.closest.reasons) && q.closest.reasons.length > 0, "question carries evidence");
-  }
+  assert.equal(res.missing.length, 1);
+  assert.match(res.missing[0].reason, /none matched/);
+  assert.equal(world.writes.length, 0);
 });
 
 test("AC2/R2: confident matches are added, uncertain ones held back, in ONE batch", async () => {
@@ -233,6 +255,39 @@ test("R3: create_playlist verifies the new playlist by re-read", async () => {
   assert.equal(post.body.public, false);
 });
 
+test("R3: a silent-failure add where the track ALREADY sits at the insert position is not reported verified", async () => {
+  const exact = makeTrack(10, "Late Night Dub", ["Echo Chamber"]);
+  const world = makeWorld({ playlists: { pl: { name: "Mix", snapshot_id: "s1", tracks: [exact] } } });
+  world.searchHits = [{ item: exact }];
+  world.silentWrites = true; // 200s, playlist never changes
+  const { call } = makeRig(world);
+  const res = parse(await call("dig_add_tracks", {
+    playlist_id: "pl",
+    tracks: [{ title: "Late Night Dub", artist: "Echo Chamber" }],
+    position: 0, // the pre-existing copy sits exactly in the verify window
+  }));
+  assert.notEqual(res.result, "verified", "presence of a pre-existing copy must not verify a failed write");
+  assert.equal(world.playlists.pl.tracks.length, 1);
+});
+
+test("R3: a rate-limited add POST surfaces the rate-limit instruction, not an ambiguous write report", async () => {
+  const world = makeWorld({ playlists: { pl: { name: "Mix", snapshot_id: "s1", tracks: [] } } });
+  const exact = makeTrack(10, "Late Night Dub", ["Echo Chamber"]);
+  world.searchHits = [{ item: exact }];
+  const origFetch = world.fetch;
+  world.fetch = async (url, opts) => {
+    if ((opts?.method ?? "GET") === "POST" && /\/items$/.test(new URL(url).pathname)) {
+      return { ok: false, status: 429, headers: { get: (k) => (k.toLowerCase() === "retry-after" ? "7200" : null) }, json: async () => ({}), text: async () => "" };
+    }
+    return origFetch(url, opts);
+  };
+  const { call } = makeRig(world);
+  const res = await call("dig_add_tracks", { playlist_id: "pl", tracks: [{ title: "Late Night Dub", artist: "Echo Chamber" }] });
+  assert.equal(res.isError, true);
+  assert.match(res.text, /rate-limiting/i);
+  assert.equal(world.playlists.pl.tracks.length, 0, "nothing was written and no probe re-read claimed otherwise");
+});
+
 // ---------- R1/R4: reorder permutation + snapshot precondition ----------
 
 test("AC2/R1: reorder composes moves that land the mocked list in the requested order", async () => {
@@ -277,6 +332,57 @@ test("AC2/R4: a concurrent edit (snapshot mismatch) becomes a re-plan instructio
   assert.equal(res.result, "ambiguous");
   assert.match(res.note, /re-plan/i);
   assert.deepEqual(world.playlists.pl.tracks.map((t) => t.name), ["A", "B", "C"], "nothing was force-written past the mismatch");
+});
+
+test("AC2/R3: a silent-failure reorder (200s, list unchanged) is flagged not-verified", async () => {
+  const tracks = ["A", "B", "C"].map((n, i) => makeTrack(i, n));
+  const world = makeWorld({ playlists: { pl: { name: "Mix", snapshot_id: "s1", tracks } } });
+  world.silentWrites = true; // every move answers 200, nothing moves
+  const { call } = makeRig(world);
+  // A derangement: no track ends where it started, so an unchanged list can
+  // never accidentally verify.
+  const res = parse(await call("dig_reorder", { playlist_id: "pl", new_order: [1, 2, 0] }));
+  assert.notEqual(res.result, "verified", "verify-after-write must catch a reorder that changed nothing");
+  assert.equal(res.result, "ambiguous");
+  assert.match(res.note, /re-read|re-plan/i);
+  assert.deepEqual(world.playlists.pl.tracks.map((t) => t.name), ["A", "B", "C"]);
+});
+
+test("R3: a mid-reorder rate limit reports partial with moves_applied, never 'nothing was lost'", async () => {
+  const tracks = ["A", "B", "C"].map((n, i) => makeTrack(i, n));
+  const world = makeWorld({ playlists: { pl: { name: "Mix", snapshot_id: "s1", tracks } } });
+  const origFetch = world.fetch;
+  let puts = 0;
+  world.fetch = async (url, opts) => {
+    if ((opts?.method ?? "GET") === "PUT" && ++puts === 2) {
+      return { ok: false, status: 429, headers: { get: (k) => (k.toLowerCase() === "retry-after" ? "7200" : null) }, json: async () => ({}), text: async () => "" };
+    }
+    return origFetch(url, opts);
+  };
+  const { call } = makeRig(world);
+  const res = parse(await call("dig_reorder", { playlist_id: "pl", new_order: [2, 1, 0] }));
+  assert.equal(res.result, "partial");
+  assert.equal(res.moves_applied, 1);
+  assert.match(res.note, /INTERMEDIATE/i);
+  assert.match(res.note, /re-plan/i);
+  assert.match(res.note, /rate-limiting/i, "the rate-limit instruction is carried in the note");
+});
+
+test("R3: a mid-reorder unknown-outcome failure reports partial state instead of an internal error", async () => {
+  const tracks = ["A", "B", "C"].map((n, i) => makeTrack(i, n));
+  const world = makeWorld({ playlists: { pl: { name: "Mix", snapshot_id: "s1", tracks } } });
+  const origFetch = world.fetch;
+  let puts = 0;
+  world.fetch = async (url, opts) => {
+    if ((opts?.method ?? "GET") === "PUT" && ++puts === 2) throw new TypeError("fetch failed");
+    return origFetch(url, opts);
+  };
+  const { call } = makeRig(world);
+  const res = parse(await call("dig_reorder", { playlist_id: "pl", new_order: [2, 1, 0] }));
+  assert.equal(res.result, "partial");
+  assert.equal(res.moves_applied, 1);
+  assert.match(res.note, /could not be confirmed/i);
+  assert.match(res.note, /re-plan/i);
 });
 
 test("R1: reorder validates the permutation and reports raw-row counts", async () => {
