@@ -61,6 +61,18 @@ test("auto-export fallback works even when the primary is blank", async () => {
   assert.ok(names.includes("dig_unfollow_playlist"), `missing from: ${names}`);
 });
 
+test("an unsubstituted placeholder primary does not mask a truthful fallback", async () => {
+  // The real Claude Code install shape when userConfig is read only via the
+  // auto-export: the .mcp.json substitution leaves the literal placeholder,
+  // and the option arrives on the CLAUDE_PLUGIN_OPTION name. The startsWith
+  // guard is what keeps the opt-in alive here (signoff mutation finding).
+  const names = await listTools({
+    DIG_ENABLE_UNFOLLOW: "${user_config.dig_enable_unfollow}",
+    CLAUDE_PLUGIN_OPTION_DIG_ENABLE_UNFOLLOW: "true",
+  });
+  assert.ok(names.includes("dig_unfollow_playlist"), `missing from: ${names}`);
+});
+
 test("a non-truthy value does not enable it", async () => {
   const names = await listTools({ DIG_ENABLE_UNFOLLOW: "false" });
   assert.ok(!names.includes("dig_unfollow_playlist"));

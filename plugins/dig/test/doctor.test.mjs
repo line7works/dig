@@ -62,21 +62,31 @@ test("no token + failed last sign-in: surfaces that flow's failure message", asy
   assert.match(res.text, /clicked Cancel/);
 });
 
-test("expired token (mocked invalid_grant path): carries the expired-connection copy", async () => {
+// The mapped branches must be DISCRIMINABLE from the generic fallback: the
+// fallback interpolates err.message (which equals the copy for these error
+// classes), so `includes(MESSAGE)` alone passes even with the mapping
+// deleted. Each test pins branch-specific surface text and rules the
+// fallback out (signoff mutation finding, slice G).
+test("expired token (mocked invalid_grant path): carries the expired-connection copy via the mapped branch", async () => {
   const res = await doctor({ probe: async () => { throw new AuthExpiredError(); } }).run();
   assert.match(res.text, /✓ Spotify connection: signed in as Test User/);
-  assert.match(res.text, /✗ Live Spotify call/);
+  assert.match(res.text, /✗ Live Spotify call: the stored connection is no longer accepted/);
   assert.ok(res.text.includes(EXPIRED_CONNECTION_MESSAGE));
+  assert.doesNotMatch(res.text, /failed unexpectedly/);
 });
 
-test("allowlist 403 on the probe: carries the User Management copy", async () => {
+test("allowlist 403 on the probe: carries the User Management copy via the mapped branch", async () => {
   const res = await doctor({ probe: async () => { throw new SpotifyApiError(ALLOWLIST_403_MESSAGE, { status: 403, endpoint: "/me" }); } }).run();
   assert.ok(res.text.includes(ALLOWLIST_403_MESSAGE));
+  assert.match(res.text, /✗ Live Spotify call: failed\./);
+  assert.doesNotMatch(res.text, /failed unexpectedly/);
 });
 
-test("premium 403 on the probe: carries the Premium copy", async () => {
+test("premium 403 on the probe: carries the Premium copy via the mapped branch", async () => {
   const res = await doctor({ probe: async () => { throw new SpotifyApiError(PREMIUM_403_MESSAGE, { status: 403, endpoint: "/me" }); } }).run();
   assert.ok(res.text.includes(PREMIUM_403_MESSAGE));
+  assert.match(res.text, /✗ Live Spotify call: failed\./);
+  assert.doesNotMatch(res.text, /failed unexpectedly/);
 });
 
 test("five-month-old token: healthy run still carries the age warning", async () => {

@@ -7,8 +7,8 @@ export const ALLOWLIST_403_MESSAGE = `**Spotify signed you in, but your app hasn
 Even though you own this app, Spotify makes you add yourself to it by hand.
 
 1. Open your app at developer.spotify.com/dashboard
-2. Click **Settings**, then the **User Management** tab
-3. Add your name and **the email address on your Spotify account**. If you have several addresses, it has to be that one.
+2. Open the **User Management** tab (next to Basic Information)
+3. Enter your name and **the email address on your Spotify account** (if you have several addresses, it has to be that one), then click **Add user**
 4. Wait about 15 minutes, then try again
 
 The 15 minutes is real. It won't work immediately.`;

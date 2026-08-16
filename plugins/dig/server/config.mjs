@@ -11,7 +11,7 @@ A Client ID is 32 characters of letters and numbers. Two things people paste by 
 - The **Client Secret**, which sits right underneath and looks almost identical. Dig never needs it. Don't paste it anywhere.
 - The **app name** you typed when you created the app.
 
-Open your app on the Spotify dashboard, click **Settings**, and copy the value labelled **Client ID**.`;
+Open your app on the Spotify dashboard — the value labelled **Client ID** sits at the top of its **Basic Information** page, with a copy button.`;
 
 export const UNCONFIGURED_MESSAGE = `**Dig isn't connected to a Spotify app yet.**
 Dig needs the Client ID of your own (free) Spotify developer app. To set it:

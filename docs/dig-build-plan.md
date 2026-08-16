@@ -156,7 +156,7 @@ Acceptance criteria:
 Footprint: `plugins/dig/skills/`, `plugins/dig/server/` (doctor, error copy), reference page content, `plugins/dig/test/`.
 Not in this slice: README/marketplace copy (slice H).
 Depends on: Slices B–F (documents and doctors what exists)
-Status: built
+Status: signed off with conditions
 
 ## Slice H — Ship preparation
 Goal: Everything a public day-one repo needs, ready for Tony's publish word — which this slice does NOT include.
@@ -477,3 +477,21 @@ No fix-introduced defects found; suite 146/146
 ### 2026-08-15 · Slice F post-review rulings
 - Tony ruled (question 1): the removal-token "bound to user" implementation stays bound to the connected app's client_id — no account-level binding needed (one app = one person is Dig's design) · per user
 - Tony ruled (question 2): playlist deletion (dig_unfollow_playlist) must become enableable by a non-developer — added to Slice G as R6/AC4 rather than reopening F · per user
+
+### 2026-08-15 — review: Slice G
+- MAJOR · plugins/dig/server/config.mjs:14 · BAD_CLIENT_ID_MESSAGE directs "click **Settings**" — the live dashboard has no Settings page (this slice's own verification) · user pastes a wrong ID, follows the copy, finds no Settings button; dig_doctor amplifies the message verbatim · slice G review (2 lenses converged)
+- MAJOR · plugins/dig/server/error-map.mjs:10 · ALLOWLIST_403_MESSAGE step 2 says "Click **Settings**, then the **User Management** tab" — no Settings page exists; User Management is a tab on the app page (/dashboard/<id>/users) · the most-likely first-run 403's instructions dead-end at a missing button · slice G review (2 lenses converged)
+- MAJOR · plugins/dig/test/doctor.test.mjs:65-80 · the expired/allowlist/premium probe-failure tests cannot tell which doctor branch fired — the generic fallback interpolates err.message, which equals the asserted copy · mutation replacing both mapped branches with `if (false)` passes 11/11 · slice G review (mutation-proven)
+- MAJOR · plugins/dig/test/unfollow-config.test.mjs:49 · placeholder-must-not-mask-fallback is untested: no case combines a "${...}" primary with fallback "true" · mutation dropping the startsWith("${") guard passes 6/6 while the real userConfig-unset install scenario would lose the opt-in · slice G review (mutation-proven)
+- MAJOR · docs/dig-build-plan.md (Deviations · Slice G, AC1 entry) · AC1's from-scratch fresh-eyes run unexercised-in-full (builder call) · the acceptance criterion "a from-scratch setup completes without improvising" was met only by live dashboard reads + a fresh-agent text walkthrough, not a real run · slice G review (rule-4 cap; Tony's call)
+- MAJOR · docs/dig-build-plan.md (Build assumptions · Slice G, redirect-copy entry) · R5's "six §12 messages wired" met as five-at-triggers + redirect-rejected paraphrased in skill/doctor text (builder call; no runtime trigger exists, verbatim draft contains the repo-banned word) · R5's letter unmet as written · slice G review (rule-4 cap; Tony's call)
+- MINOR · plugins/dig/server/config.mjs:19 · UNCONFIGURED_MESSAGE's "/plugin → settings" path contradicts the setup skill's CLI-only rule · doctor and skill give conflicting rescue advice in the same session · slice G review
+- MINOR · plugins/dig/skills/setup/SKILL.md (step 2) · redirect URI hardcoded to port 8888 while DIG_CALLBACK_PORT exists · an override user registers a URI the server never serves; sign-in silently times out · slice G review (2 lenses)
+- MINOR · plugins/dig/server/destructive-tools.mjs:212 · trim-order asymmetry vs config.usable(): whitespace-only primary masks the fallback; " true " now enables where it didn't before · divergent "same lesson" readers; enable-direction change on a destructive gate · slice G review (2 lenses)
+- MINOR · plugins/dig/server/doctor.mjs:56 · doctor ignores an in-flight sign-in (result null) and advises dig_connect, which supersedes the live flow · user mid-approval gets their browser tab invalidated · slice G review
+- MINOR · plugins/dig/server/doctor.mjs:63 · future/missing obtained_at renders "-1 days old" / claims "connected today" with no age warning · misleading age report on clock skew or a hand-edited record · slice G review
+- MINOR · plugins/dig/server/doctor.mjs:69 · REDIRECT_HINT printed unconditionally on the no-token branch · a clean fresh install's first doctor run leads with failure copy · slice G review (2 lenses)
+- MINOR · plugins/dig/server/doctor.mjs:1 · every failed diagnosis returns isError:false (documented builder call) · a client branching on isError treats a broken setup as success · slice G review
+- MINOR · plugins/dig/server/index.mjs:44 · default tool surface now 17 (18 enabled) vs the constraint's 12–16 target · constraint drift, disclosed · slice G review (2 lenses)
+- MINOR · plugins/dig/skills/digging/SKILL.md · "put it in the proposal's `version` field or title" vs write-tools schema's "title, without version tags" · following the "or title" branch fights the schema's design · slice G review
+- MINOR · plugins/dig/test/doctor.test.mjs:14 · readToken always injected (default-deps wiring unproven); probe endpoint/budget unasserted; isError unasserted on several paths · narrow mutants survive · slice G review
