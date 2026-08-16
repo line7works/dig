@@ -137,7 +137,7 @@ Acceptance criteria:
 Footprint: `plugins/dig/server/`, `plugins/dig/test/`.
 Not in this slice: nothing adjacent — this is the last tool slice.
 Depends on: Slice C (E recommended first so the result vocabulary exists)
-Status: not started
+Status: built
 
 ## Slice G — Onboarding skills, digging skill, doctor
 Goal: The ten minutes before Dig works, made survivable by a non-developer, plus the taste layer that makes digging good.
@@ -228,6 +228,18 @@ Status: not started
 - index.mjs EOF exit now drains stdout before exiting — the larger tools/list frame exposed a truncation the old synchronous process.exit caused (caught by the existing stdout-purity suite) · builder call
 - Tony's standing ruling held: the matcher's free-text reason strings were passed through as evidence unchanged; slice E did not need structured fields · builder call
 
+### 2026-08-15 · Slice F
+- Plan tokens are an in-memory single-use registry with a 15-minute expiry; "bound to user" implemented as bound to the connected app's client_id (the only stable local user identity) — a token does not survive a server restart and is consumed by the first apply attempt · builder call
+- Unfollow opt-in mechanism is the env var `DIG_ENABLE_UNFOLLOW` (or `CLAUDE_PLUGIN_OPTION_DIG_ENABLE_UNFOLLOW`) — plugin.json/userConfig is outside this slice's footprint; a config field can land in G/H · builder call
+- A plan that would remove every track is refused, same class as the empty plan (R4's no-code-path-empties) · builder call
+- Bounds: one removal plan carries at most 100 distinct tracks (one DELETE request); restore writes batches of 100 uris (PUT-replace first batch, POST appends after) · builder call
+- dig_restore_snapshot is itself destructive, so it got the same preview→token two-step, the requiresUserInteraction _meta, and a pre-restore snapshot of the current state (a restore is undoable); called with no arguments it lists saved snapshots · builder call
+- Unavailable/local rows in a snapshot cannot be restored (no uri); the restore preview reports how many are lost · builder call
+- dig_unfollow_playlist two-step like removal; its verify pages /me/playlists up to 200 entries, beyond that reports "accepted" · builder call
+- plan_removal input is `track_ids` (ALL copies removed — disclosed when multi-copy) or `mode:"duplicates"`; a dedupe with no duplicates returns result "no_plan" and mints no token · builder call
+- Snapshot files: `snapshots/<ISO-timestamp>-<name-slug>-<playlistId>.json` in the data dir, 0600 atomic via the slice-B writer; .gitignore's existing `snapshots/` pattern covers the repo-side risk · builder call
+- Server instructions: three existing lines tightened (and the now-false "writes are additive only" claim removed) to fit the two new destructive-rules lines inside the 2 KB budget · builder call
+
 ## Deviations
 
 ### 2026-08-15 · Slice A
@@ -249,6 +261,9 @@ Status: not started
 - none
 
 ### 2026-08-15 · Slice E
+- none
+
+### 2026-08-15 · Slice F
 - none
 
 ## Discovered
@@ -273,6 +288,11 @@ Status: not started
 - Spotify's dash-composed version form confirmed in the wild: a proposal for "(2011 remaster)" matched "Wish You Were Here - 2011 Remaster" cleanly through the add flow (slice-D R2 proven live)
 - The slice-D tie-order MINOR (matching.mjs:342) reproduced live: two distinct "Bohemian Rhapsody" track IDs at identical verdict+score; "best" was input order, exactly as flagged
 - AC1 left a throwaway playlist "Dig slice-E throwaway" (2XqanBFQWKCZC178vHS91A) on the test account — safe to delete, useful for slice F's live AC
+
+### 2026-08-15 · Slice F live AC1 (R7 finding)
+- R7 answered: the track-relinking silent failure (200-yet-nothing-removed; workaround field removed Feb 2026) did NOT reproduce — two live DELETEs against the throwaway playlist both removed the planned track and verified by re-read. The apply path still reports it honestly (ambiguous/partial + never-blind-retry + snapshot pointer) if it ever appears in the wild
+- NEW live failure mode: immediately after a DELETE, `GET /playlists/{id}?fields=snapshot_id` can still serve the PRE-delete snapshot_id (read-after-write staleness). The first live apply reported "ambiguous" on a removal that HAD landed, because its verify re-read went through the snapshot-keyed find-index cache, which the stale metadata validated. Fixed in-slice: destructive verifies page the rows directly (never the cache) and drop the playlist's cache entry; regression test added. Any future consumer that verifies a write through FindIndex is exposed to the same staleness (slice E's write verifies read windows directly and are unaffected)
+- AC1 restored the throwaway playlist to its 3-track state; the run's snapshot files remain in the data dir as real restore candidates
 
 ## Punch list
 

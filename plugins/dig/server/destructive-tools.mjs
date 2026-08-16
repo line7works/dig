@@ -24,6 +24,7 @@ import { join } from "node:path";
 import { defineTool } from "./tool-def.mjs";
 import { spotify } from "./spotify-client.mjs";
 import { FindIndex } from "./find-index.mjs";
+import { FIELDS, extractRows, projectItemRow } from "./projection.mjs";
 import { RateLimitError, SpotifyApiError } from "./error-map.mjs";
 import { AuthExpiredError, dataDir, writeFileAtomic0600 } from "./token-store.mjs";
 import { ValidationError, requireString, wrapTools } from "./read-tools.mjs";
@@ -197,9 +198,31 @@ export function createDestructiveTools({ client = spotify, index, registry, enab
   const unfollowEnabled =
     enableUnfollow ?? /^(1|true|yes)$/i.test(process.env.DIG_ENABLE_UNFOLLOW ?? process.env.CLAUDE_PLUGIN_OPTION_DIG_ENABLE_UNFOLLOW ?? "");
 
-  // Fresh read of the playlist (index rebuilds when snapshot_id moved).
+  // Read of the playlist for PLANNING (index rebuilds when snapshot_id moved).
   async function readPlaylist(playlistId, budget) {
     return findIndex.get(playlistId, budget);
+  }
+
+  // Verification read AFTER a destructive write: pages the rows directly and
+  // never consults the snapshot-keyed cache. Observed live (2026-08-15):
+  // immediately after a DELETE, Spotify's metadata read can still serve the
+  // PRE-delete snapshot_id, which makes a cache hit return the pre-delete
+  // track list and a landed removal read as failed. The cache entry is also
+  // dropped so later finds cannot serve the stale state.
+  async function verifyRead(playlistId, budget) {
+    findIndex.cache.delete(playlistId);
+    const uris = [];
+    for (let offset = 0; ; offset += 50) {
+      const page = await client.request(`/playlists/${encodeURIComponent(playlistId)}/items`, {
+        query: { fields: FIELDS.compact, limit: 50, offset },
+        budget,
+      });
+      const rows = extractRows(page);
+      for (const row of rows) uris.push(projectItemRow(row, "compact")?.uri ?? null);
+      const total = page?.total ?? uris.length;
+      if (rows.length === 0 || offset + 50 >= total) break;
+    }
+    return uris; // uri per raw row, null for unavailable rows
   }
 
   const tools = [
@@ -399,9 +422,8 @@ export function createDestructiveTools({ client = spotify, index, registry, enab
         }
 
         // Verify by re-read: none of the removed uris may remain (R3 of
-        // slice E, applied to removal).
-        const after = await readPlaylist(plan.playlistId, budget);
-        const remaining = new Set(after.tracks.map((t) => t.uri));
+        // slice E, applied to removal). Direct read — never the cache.
+        const remaining = new Set((await verifyRead(plan.playlistId, budget)).filter(Boolean));
         const stillThere = plan.uris.filter((u) => remaining.has(u));
         const removedOk = stillThere.length === 0;
 
@@ -422,8 +444,7 @@ export function createDestructiveTools({ client = spotify, index, registry, enab
               note: `Dedupe stopped midway: the duplicate copies were removed, but re-adding the kept copies did not complete. ${cause}\n\nThe playlist is missing those tracks right now. Re-read it, then either re-add the missing tracks with dig_add_tracks or restore the pre-change state with dig_restore_snapshot("${snapshotFile}").`,
             });
           }
-          const final = await readPlaylist(plan.playlistId, budget);
-          const finalUris = new Set(final.tracks.map((t) => t.uri));
+          const finalUris = new Set((await verifyRead(plan.playlistId, budget)).filter(Boolean));
           const readdMissing = plan.readdUris.filter((u) => !finalUris.has(u));
           const result = readdMissing.length === 0 ? "verified" : "partial";
           return jsonText({
@@ -515,8 +536,8 @@ export function createDestructiveTools({ client = spotify, index, registry, enab
             });
           }
           // Verify by re-read: the uri sequence must match the snapshot's.
-          const after = await readPlaylist(plan.playlistId, budget);
-          const afterUris = after.tracks.map((t) => t.uri);
+          // Direct read — never the cache.
+          const afterUris = (await verifyRead(plan.playlistId, budget)).filter(Boolean);
           const matches = uris.length === afterUris.length && uris.every((u, i) => afterUris[i] === u);
           return jsonText({
             result: matches ? "verified" : "ambiguous",

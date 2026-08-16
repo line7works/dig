@@ -55,7 +55,9 @@ function makeWorld({ playlists = {} } = {}) {
     if ((m = u.pathname.match(/^\/v1\/playlists\/([^/]+)$/))) {
       const p = playlists[m[1]];
       if (!p) return respond(404, { error: { status: 404, message: "Not found." } });
-      return respond(200, { id: m[1], name: p.name, snapshot_id: p.snapshot_id });
+      // world.staleMetaSnapshot simulates the live finding: metadata reads
+      // right after a write can still serve the PRE-write snapshot_id.
+      return respond(200, { id: m[1], name: p.name, snapshot_id: world.staleMetaSnapshot ?? p.snapshot_id });
     }
     if ((m = u.pathname.match(/^\/v1\/playlists\/([^/]+)\/items$/))) {
       const p = playlists[m[1]];
@@ -284,6 +286,19 @@ test("apply removes exactly the planned tracks, writes a 0600 snapshot first, ve
   assert.equal(snap.playlist_id, "pl1");
   assert.equal(snap.total_rows, 5);
   assert.deepEqual(snap.tracks.map((t) => t.id), ["t1", "t2", "t3", "t2", "t4"]);
+});
+
+test("verify bypasses the snapshot cache: stale post-write metadata cannot fail a landed removal", async () => {
+  // Live finding (2026-08-15): right after a DELETE, Spotify's metadata read
+  // can still serve the pre-delete snapshot_id; a cache-keyed verify then
+  // returns the pre-delete track list and a landed removal reads as failed.
+  const world = standardWorld();
+  const { call } = makeRig(world);
+  const p = parse(await call("dig_plan_removal", { playlist_id: "pl1", track_ids: ["t1"] }));
+  world.staleMetaSnapshot = "snap-0"; // metadata frozen at the pre-write value
+  const r = parse(await call("dig_apply_removal", { removal_token: p.removal_token, summary: p.plan.summary }));
+  assert.equal(r.result, "verified");
+  assert.equal(world.playlists.pl1.tracks.some((t) => t.id === "t1"), false);
 });
 
 test("silent-failure removal (200 but nothing removed) reports ambiguous, never verified", async () => {
