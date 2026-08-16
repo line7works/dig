@@ -182,7 +182,7 @@ Acceptance criteria:
 Footprint: plugins/dig/server/ (config.mjs, new config-file module or extension, status.mjs, doctor.mjs, destructive-tools.mjs wiring, connect path untouched), plugins/dig/skills/setup/SKILL.md, reference page in callback.mjs, plugins/dig/test/.
 Not in this slice: README/marketplace copy (slice H); any Spotify API behavior change; the digging skill.
 Depends on: Slice G (its conditions stand — this slice does not need G's open AC1, it unblocks it)
-Status: rejected
+Status: signed off
 
 ## Slice H — Ship preparation
 Goal: Everything a public day-one repo needs, ready for Tony's publish word — which this slice does NOT include.
@@ -582,3 +582,12 @@ WAIVED (per user) · 2026-08-16 · MAJOR · docs/dig-build-plan.md (Build assump
 - MINOR · plugins/dig/server/config-tools.mjs (digSetClientId success text) · lacks the never-paste-the-Secret warning at the exact paste-in-chat moment; a pasted Secret passes the shape check · slice G2 review
 - MINOR · plugins/dig/test/config-file.test.mjs:260-278 · enable-then-call path untested (only tools/list asserted after enable) · slice G2 review
 - MINOR · plugins/dig/test/config-file.test.mjs:149 · alternation regex's second branch matches alone — near-vacuous assert · slice G2 review
+
+### 2026-08-16 — recheck: Slice G2
+- BLOCKER · plugins/dig/server/config-file.mjs:19-31 · (non-string config.json value crashes the server at startup and every tools/list) · fixed — executed: server launched clean against {"spotify_client_id": 123, "dig_enable_unfollow": true}, answered initialize + tools/list; non-strings filtered at read (config-file.mjs:32) and usable() type-guards (config.mjs:30)
+- MAJOR · plugins/dig/server/index.mjs (handleToolCall gate) · (tools/call gating of a disabled dig_unfollow_playlist unpinned by tests) · fixed — mutation re-executed on a copy: the enable-then-call test now fails with "disabled tool must be refused at tools/call with -32602"; call-gate + enabled-call path pinned at test/config-file.test.mjs:349
+- MAJOR · plugins/dig/server/config.mjs (resolveClientId) · (invalid-shape env masks a valid file value; dig_set_client_id claimed active falsely; status/doctor silent in invalid state) · fixed — executed: invalid env + valid file → status shows wrong-shape source + DIFFERENT-Client-IDs warning; set_client_id says "NOT active yet", never "active right now"
+- MAJOR · plugins/dig/server/config-file.mjs:36-44 · (writeConfigPatch read-merge-write had no lock) · fixed — static: acquireLock held across the whole read-merge-write (now config-file.mjs:43-60), released in finally
+- MAJOR · plugins/dig/server/config-tools.mjs (digSetClientId) · (mid-session ID change silently destroyed the stored connection) · fixed — static: token read before write, "will be disconnected — run dig_connect" warning when the stored sign-in is bound to a different app (config-tools.mjs:62-85), matching token-store's actual signOut mechanism
+- MAJOR · plugins/dig/server/status.mjs / doctor.mjs · (unfollow flag's active source and env-vs-file mismatch never reported) · fixed — executed: env false + file true → status and doctor print the flag state, source, and the DISAGREE warning (describeUnfollow, status.mjs; doctor.mjs:68)
+No fix-introduced defects found; suite 187/187
