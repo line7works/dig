@@ -147,10 +147,12 @@ Requirements:
 - R3: Digging skill (`plugins/dig/skills/digging/SKILL.md`): Claude proposes from its own knowledge, Dig verifies, present the found/not-found list before adding, report misses honestly, never pad, honor explicit version requests, uncertain matches come back as questions with the matcher's evidence (PRD §5, §6).
 - R4: `dig_doctor` tool: checks Client ID shape, token presence/age (five-month warning), and one live probe call; maps each failure to its research §12 instruction (Premium, allowlist, expired, redirect mismatch) (PRD §10).
 - R5: All six research §12 draft error messages wired to their actual trigger points across the server.
+- R6: A non-developer path to enable `dig_unfollow_playlist` (playlist deletion): a plugin userConfig field (or equivalent no-terminal flow) that sets the slice-F opt-in, documented in the setup/skill text with the deletion warning — Tony's ruling 2026-08-15 (slice-F review question 2).
 Acceptance criteria:
 - AC1: Fresh-eyes run: with the skill as the only guide, a from-scratch setup on the Mac Studio completes without improvising (Tony or a fresh Claude session following only the skill text) — verify: manual.
 - AC2: `dig_doctor` distinguishes at least: unconfigured, bad-shape ID, no token, expired token (mocked), healthy — verify: new tests at `plugins/dig/test/doctor.test.mjs` plus one live healthy run.
 - AC3: The no-localhost test still passes; the skill files carry exact dashboard URLs — verify: existing test + manual read.
+- AC4: With the R6 opt-in set through the non-developer path, dig_unfollow_playlist appears in the tool list; unset, it stays absent — verify: unit test plus one manual flip.
 Footprint: `plugins/dig/skills/`, `plugins/dig/server/` (doctor, error copy), reference page content, `plugins/dig/test/`.
 Not in this slice: README/marketplace copy (slice H).
 Depends on: Slices B–F (documents and doctors what exists)
@@ -452,3 +454,7 @@ No fix-introduced defects found; suite 113/113
 - MAJOR · plugins/dig/server/destructive-tools.mjs:312 · (all-duplicates dedupe passes the kept check and empties the playlist transiently/permanently) · fixed — never-empty guard now measures playable rows before re-add (:329-335) with a dedupe-specific refusal; executed: [A,A,B,B] mode:duplicates refused at plan time, no token minted
 - MAJOR · plugins/dig/server/destructive-tools.mjs:75 · (same-millisecond snapshot names rename-overwrite the earlier rollback point) · fixed — random suffix appended (now :78); executed: back-to-back snapshots of one playlist produced distinct files
 No fix-introduced defects found; suite 146/146
+
+### 2026-08-15 · Slice F post-review rulings
+- Tony ruled (question 1): the removal-token "bound to user" implementation stays bound to the connected app's client_id — no account-level binding needed (one app = one person is Dig's design) · per user
+- Tony ruled (question 2): playlist deletion (dig_unfollow_playlist) must become enableable by a non-developer — added to Slice G as R6/AC4 rather than reopening F · per user
