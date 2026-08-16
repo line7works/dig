@@ -156,7 +156,7 @@ Acceptance criteria:
 Footprint: `plugins/dig/skills/`, `plugins/dig/server/` (doctor, error copy), reference page content, `plugins/dig/test/`.
 Not in this slice: README/marketplace copy (slice H).
 Depends on: Slices B–F (documents and doctors what exists)
-Status: signed off with conditions
+Status: signed off
 
 ## Slice G2 — Desktop-proof configuration
 Goal: Dig configures itself from chat on the desktop app, where plugin userConfig never arrives — the Client ID (and the unfollow opt-in) persist in Dig's own data directory, effective without a new chat.
@@ -596,3 +596,5 @@ WAIVED (per user) · 2026-08-16 · MAJOR · docs/dig-build-plan.md (Build assump
 - MAJOR · plugins/dig/server/config-tools.mjs (digSetClientId) · (mid-session ID change silently destroyed the stored connection) · fixed — static: token read before write, "will be disconnected — run dig_connect" warning when the stored sign-in is bound to a different app (config-tools.mjs:62-85), matching token-store's actual signOut mechanism
 - MAJOR · plugins/dig/server/status.mjs / doctor.mjs · (unfollow flag's active source and env-vs-file mismatch never reported) · fixed — executed: env false + file true → status and doctor print the flag state, source, and the DISAGREE warning (describeUnfollow, status.mjs; doctor.mjs:68)
 No fix-introduced defects found; suite 187/187
+
+CLOSED (per user) · 2026-08-16 · docs/dig-build-plan.md (Deviations · Slice G, AC1 entry) · AC1 fresh-eyes run — Tony ruled the 2026-08-16 live desktop run (paste-in-chat config → connect → live list, Pour Guys dummy account) satisfies it. Self-add note: Tony HAD added himself under User Management on both apps, so the allowlist-trap enforcement question remains unanswered — setup skill step 4 stays loud. Next test is a real first user (Jon Bartlett), after slice H.
