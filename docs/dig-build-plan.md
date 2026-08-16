@@ -182,7 +182,7 @@ Acceptance criteria:
 Footprint: plugins/dig/server/ (config.mjs, new config-file module or extension, status.mjs, doctor.mjs, destructive-tools.mjs wiring, connect path untouched), plugins/dig/skills/setup/SKILL.md, reference page in callback.mjs, plugins/dig/test/.
 Not in this slice: README/marketplace copy (slice H); any Spotify API behavior change; the digging skill.
 Depends on: Slice G (its conditions stand — this slice does not need G's open AC1, it unblocks it)
-Status: built
+Status: rejected
 
 ## Slice H — Ship preparation
 Goal: Everything a public day-one repo needs, ready for Tony's publish word — which this slice does NOT include.
@@ -561,3 +561,24 @@ No fix-introduced defects; suite 164/164
 - Tony ruled (self-add question): the 2026-08-15 "0/5 users added yet calls work" observation is NOT evidence the trap is gone — he had already added himself before this work (the dashboard's 0/5 display vs his recollection is unreconciled; check during the new-account test). User Management step stays loud. The AC1 dummy-account run doubles as the live test of whether self-add is still required · per user
 
 WAIVED (per user) · 2026-08-16 · MAJOR · docs/dig-build-plan.md (Build assumptions · Slice G, redirect-copy entry) · R5's "six §12 messages" met as five-at-triggers + paraphrased redirect hint in skill text and dig_doctor — Tony blessed skill/doctor as the copy's home (no runtime trigger exists)
+
+### 2026-08-16 — review: Slice G2
+- BLOCKER · plugins/dig/server/config-file.mjs:19-31 · non-string config.json value crashes the server at startup and every tools/list — usable() calls .trim() on unvalidated values · {"spotify_client_id": 123} or {"dig_enable_unfollow": true} (the natural hand edit) → TypeError at module load, server dead permanently with no recovery instruction; reproduced live · slice G2 review
+- MAJOR · plugins/dig/server/index.mjs (handleToolCall gate) · tools/call gating of a disabled dig_unfollow_playlist is unpinned by tests — mutation removing entryActive() from the call path passed the full suite · a regression drops the call-side gate: tool hidden from tools/list but callable with no opt-in, suite green; also weakens slice F AC3 (destructive.test.mjs rewrite pins listing only) · slice G2 review (mutation-proven, 2 lenses)
+- MAJOR · plugins/dig/server/config.mjs (resolveClientId) · invalid-shape env value masks a valid file value; dig_set_client_id says "active right now" falsely; status/doctor never surface the mismatch in the invalid state · env "my-app-name" + correct ID pasted in chat → success text, nothing works, no chat-reachable fix · slice G2 review (2 lenses converged)
+- MAJOR · plugins/dig/server/config-file.mjs:36-44 · writeConfigPatch read-merge-write has no lock · two sessions: one sets Client ID while the other flips deletion → one write silently lost (acquireLock exists in the same module) · slice G2 review
+- MAJOR · plugins/dig/server/config-tools.mjs (digSetClientId) · mid-session ID change silently destroys the stored connection with no warning · new valid-shape value (e.g. a pasted 32-hex Client Secret) → token-store client_id mismatch → signOut deletes token.json, full re-auth · slice G2 review
+- MAJOR · plugins/dig/server/status.mjs / doctor.mjs · R4/R6 implemented for the Client ID only — unfollow flag's active source and env-vs-file mismatch never reported · "why won't deletion enable" support conversation gets no source info · slice G2 review
+- MINOR · plugins/dig/server/callback.mjs (reference page step 5) · post-install "start a new chat" instruction dropped entirely · fresh installer reading the page standalone gets no new-chat hint · slice G2 review (2 lenses)
+- MINOR · plugins/dig/server/index.mjs (handleToolCall) · disabled-but-registered tool answers bare -32602 like an unknown tool · model calling a just-disabled unfollow gets a protocol error, no "turned off" text · slice G2 review (2 lenses)
+- MINOR · plugins/dig/server/config-file.mjs:22-27 · chmodSync failure inside the read try discards a readable config · group-readable file owned by another uid reads as absent while status says "not configured" · slice G2 review
+- MINOR · plugins/dig/server/config-file.mjs:22-25 · a directory named config.json gets chmod'd 0600 on read (no isFile() check) · read path mutates directory permissions, then reads as absent · slice G2 review
+- MINOR · plugins/dig/server/config-tools.mjs:74 · list_changed notification fires unconditionally, including no-op and env-overridden writes · hosts re-list for nothing; signal unreliable · slice G2 review
+- MINOR · plugins/dig/server/destructive-tools.mjs (PlanRegistry) · disable→re-enable within 15 min does not invalidate an outstanding unfollow confirm token · stale approval executes after a revocation window · slice G2 review
+- MINOR · plugins/dig/server/config-file.mjs:41 · merge re-persists garbage keys/non-string values from an existing file (amplifies the BLOCKER); corrupt file merges onto {} silently dropping the other setting · slice G2 review
+- MINOR · plugins/dig/server/config.mjs (resolveClientId) · every checkClientId() now stats+reads config.json even when env is usable, including the per-request hot path (spotify-client.mjs:44) · hung/slow data-dir mount taxes every API call · slice G2 review
+- MINOR · plugins/dig/server/config.mjs (resolveUnfollowFlag) · whitespace-only primary env no longer terminal: precedence flip can enable the destructive gate across the upgrade with no user action (deliberate, ledgered) · slice G2 review
+- MINOR · plugins/dig/server/status.mjs · dig_status has no line saying playlist deletion is enabled · cross-session enable is invisible until a tools/list · slice G2 review
+- MINOR · plugins/dig/server/config-tools.mjs (digSetClientId success text) · lacks the never-paste-the-Secret warning at the exact paste-in-chat moment; a pasted Secret passes the shape check · slice G2 review
+- MINOR · plugins/dig/test/config-file.test.mjs:260-278 · enable-then-call path untested (only tools/list asserted after enable) · slice G2 review
+- MINOR · plugins/dig/test/config-file.test.mjs:149 · alternation regex's second branch matches alone — near-vacuous assert · slice G2 review
