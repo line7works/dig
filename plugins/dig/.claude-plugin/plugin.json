@@ -1,6 +1,6 @@
 {
   "name": "dig",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "Spotify playlist tools: create, edit, reorder, dedupe, and grow playlists with verified tracks. Requires Spotify Premium. Dig — a Line 7 product.",
   "userConfig": {
     "spotify_client_id": {
