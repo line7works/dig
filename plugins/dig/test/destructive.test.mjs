@@ -9,7 +9,7 @@ import { mkdtempSync, readdirSync, readFileSync, statSync, rmSync } from "node:f
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { SpotifyClient } from "../server/spotify-client.mjs";
-import { createDestructiveTools, PlanRegistry, MOVES_TO_END_DISCLOSURE } from "../server/destructive-tools.mjs";
+import { createDestructiveTools, PlanRegistry, MOVES_TO_END_DISCLOSURE, writeSnapshot } from "../server/destructive-tools.mjs";
 import { FindIndex } from "../server/find-index.mjs";
 
 process.env.SPOTIFY_CLIENT_ID = "a".repeat(32);
@@ -62,10 +62,14 @@ function makeWorld({ playlists = {} } = {}) {
     if ((m = u.pathname.match(/^\/v1\/playlists\/([^/]+)\/items$/))) {
       const p = playlists[m[1]];
       if (!p) return respond(404, { error: { status: 404, message: "Not found." } });
+      if (method === "GET" && world.failItemsGets) {
+        return respond(429, { error: { status: 429, message: "rate limited" } });
+      }
       if (method === "DELETE") {
         if (body.snapshot_id && body.snapshot_id !== p.snapshot_id) {
           return respond(400, { error: { status: 400, message: "Snapshot mismatch" } });
         }
+        if (world.failItemsGetsAfterDelete) world.failItemsGets = true;
         if (!world.silentDeletes) {
           const gone = new Set(body.items.map((x) => x.uri));
           p.tracks = p.tracks.filter((t) => !t || !gone.has(t.uri));
@@ -144,7 +148,7 @@ test("a plan that would empty the playlist is refused (no code path empties)", a
   const { call } = makeRig(standardWorld());
   const r = await call("dig_plan_removal", { playlist_id: "pl1", track_ids: ["t1", "t2", "t3", "t4"] });
   assert.equal(r.isError, true);
-  assert.match(r.text, /would empty the playlist/);
+  assert.match(r.text, /remove every playable track/);
 });
 
 test("plan for tracks not in the playlist is refused", async () => {
@@ -398,4 +402,118 @@ test("env opt-in string enables unfollow registration", async () => {
   } finally {
     delete process.env.DIG_ENABLE_UNFOLLOW;
   }
+});
+
+// ---------- fix pins: kind binding, summary binding, verify failures, ----------
+// ---------- never-empty on playable rows, name uniqueness, retarget ----------
+
+test("kind binding: a removal token is refused by restore and unfollow, nothing written", async () => {
+  const world = standardWorld();
+  const { call } = makeRig(world, { enableUnfollow: true });
+  const p1 = parse(await call("dig_plan_removal", { playlist_id: "pl1", track_ids: ["t1"] }));
+  const asRestore = await call("dig_restore_snapshot", { restore_token: p1.removal_token });
+  assert.equal(asRestore.isError, true);
+  assert.match(asRestore.text, /different operation/);
+  const p2 = parse(await call("dig_plan_removal", { playlist_id: "pl1", track_ids: ["t1"] }));
+  const asUnfollow = await call("dig_unfollow_playlist", { playlist_id: "pl1", confirm_token: p2.removal_token });
+  assert.equal(asUnfollow.isError, true);
+  assert.match(asUnfollow.text, /different operation/);
+  assert.equal(world.writes.length, 0, "no write of any kind fired");
+  assert.equal(world.playlists.pl1.tracks.length, 5);
+});
+
+test("kind binding: a restore token is refused by dig_apply_removal", async () => {
+  const world = standardWorld();
+  world.byUri = Object.fromEntries(world.playlists.pl1.tracks.map((t) => [t.uri, t]));
+  const { call } = makeRig(world);
+  // Make a snapshot via a real removal, then preview a restore.
+  const p = parse(await call("dig_plan_removal", { playlist_id: "pl1", track_ids: ["t1"] }));
+  const applied = parse(await call("dig_apply_removal", { removal_token: p.removal_token, summary: p.plan.summary }));
+  const preview = parse(await call("dig_restore_snapshot", { snapshot: applied.snapshot }));
+  const writesBefore = world.writes.length;
+  const r = await call("dig_apply_removal", { removal_token: preview.restore_token, summary: preview.plan.summary });
+  assert.equal(r.isError, true);
+  assert.match(r.text, /different operation/);
+  assert.equal(world.writes.length, writesBefore, "the restore token executed nothing as a removal");
+});
+
+test("summary binding: a summary that differs from the plan's sentence is refused, nothing written", async () => {
+  const world = standardWorld();
+  const { call } = makeRig(world);
+  const p = parse(await call("dig_plan_removal", { playlist_id: "pl1", track_ids: ["t1"] }));
+  const r = await call("dig_apply_removal", { removal_token: p.removal_token, summary: "Remove 1 duplicate" });
+  assert.equal(r.isError, true);
+  assert.match(r.text, /doesn't match the plan's sentence/);
+  assert.equal(world.writes.length, 0);
+});
+
+test("verify failure after a landed removal reports accepted with the snapshot pointer, not a bare error", async () => {
+  const world = standardWorld();
+  const { call } = makeRig(world);
+  const p = parse(await call("dig_plan_removal", { playlist_id: "pl1", track_ids: ["t1"] }));
+  world.failItemsGetsAfterDelete = true; // every re-read after the DELETE rate-limits
+  const r = await call("dig_apply_removal", { removal_token: p.removal_token, summary: p.plan.summary });
+  assert.equal(r.isError, false, "not a bare error");
+  const out = parse(r.text === undefined ? r : r);
+  assert.equal(out.result, "accepted");
+  assert.ok(out.snapshot, "snapshot pointer survives the verify failure");
+  assert.match(out.note, /re-read failed/i);
+  assert.equal(world.playlists.pl1.tracks.some((t) => t.id === "t1"), false, "the removal itself landed");
+});
+
+test("dedupe of an all-duplicates playlist is refused at plan time (would pass through empty)", async () => {
+  const world = makeWorld({
+    playlists: { pl1: { name: "All Dupes", snapshot_id: "s", tracks: [makeTrack(1, "Alpha"), makeTrack(1, "Alpha"), makeTrack(2, "Beta"), makeTrack(2, "Beta")] } },
+  });
+  const { call } = makeRig(world);
+  const r = await call("dig_plan_removal", { playlist_id: "pl1", mode: "duplicates" });
+  assert.equal(r.isError, true);
+  assert.match(r.text, /fully empty playlist/);
+  assert.equal(world.writes.length, 0);
+});
+
+test("never-empty guard counts playable rows only: ghost rows cannot keep a playlist 'alive'", async () => {
+  const world = makeWorld({
+    playlists: { pl1: { name: "Ghosts", snapshot_id: "s", tracks: [null, makeTrack(1, "Alpha"), null] } },
+  });
+  const { call } = makeRig(world);
+  const r = await call("dig_plan_removal", { playlist_id: "pl1", track_ids: ["t1"] });
+  assert.equal(r.isError, true);
+  assert.match(r.text, /remove every playable track/);
+});
+
+test("snapshot filenames are unique even for identical inputs in the same millisecond", () => {
+  const entry = { tracks: [], totalRows: 0 };
+  const a = writeSnapshot({ playlistId: "plX", playlistName: "Same", snapshotId: "s", indexEntry: entry, reason: "test" });
+  const b = writeSnapshot({ playlistId: "plX", playlistName: "Same", snapshotId: "s", indexEntry: entry, reason: "test" });
+  assert.notEqual(a, b);
+});
+
+test("restore into_playlist_id rebuilds the snapshot into a different playlist", async () => {
+  const world = standardWorld();
+  world.playlists.pl2 = { name: "Fresh Target", snapshot_id: "s2", tracks: [makeTrack(9, "Seed")] };
+  world.library.push("pl2");
+  world.byUri = Object.fromEntries(world.playlists.pl1.tracks.map((t) => [t.uri, t]));
+  const { call } = makeRig(world);
+  const p = parse(await call("dig_plan_removal", { playlist_id: "pl1", track_ids: ["t1"] }));
+  const applied = parse(await call("dig_apply_removal", { removal_token: p.removal_token, summary: p.plan.summary }));
+  const preview = parse(await call("dig_restore_snapshot", { snapshot: applied.snapshot, into_playlist_id: "pl2" }));
+  assert.equal(preview.plan.restores_into, "pl2");
+  const done = parse(await call("dig_restore_snapshot", { restore_token: preview.restore_token }));
+  assert.equal(done.result, "verified");
+  assert.deepEqual(world.playlists.pl2.tracks.map((t) => t.id), ["t1", "t2", "t3", "t2", "t4"], "target playlist holds the snapshot's list");
+  assert.deepEqual(world.playlists.pl1.tracks.map((t) => t.id), ["t2", "t3", "t2", "t4"], "source playlist untouched by the retargeted restore");
+});
+
+test("verify cache invalidation reaches a SHARED index (the one read tools would serve from)", async () => {
+  const world = standardWorld();
+  const store = { getAccessToken: async () => "tok", invalidateAccess() {} };
+  const client = new SpotifyClient({ store, fetchImpl: (url, opts) => world.fetch(url, opts), sleep: async () => {} });
+  const shared = new FindIndex(client);
+  const tools = createDestructiveTools({ client, index: shared, registry: new PlanRegistry() });
+  const call2 = (name, args) => tools.find((x) => x.def.name === name).handler(args);
+  const p = parse(await call2("dig_plan_removal", { playlist_id: "pl1", track_ids: ["t1"] }));
+  assert.ok(shared.cache.has("pl1"), "planning populated the shared cache");
+  await call2("dig_apply_removal", { removal_token: p.removal_token, summary: p.plan.summary });
+  assert.equal(shared.cache.has("pl1"), false, "apply dropped the shared cache entry");
 });

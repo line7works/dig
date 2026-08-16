@@ -72,7 +72,10 @@ function requireSnapshotsDir() {
 export function writeSnapshot({ playlistId, playlistName, snapshotId, indexEntry, reason }) {
   const dir = requireSnapshotsDir();
   const takenAt = new Date().toISOString();
-  const name = `${takenAt.replace(/[:.]/g, "-")}-${slug(playlistName)}-${playlistId}.json`;
+  // A random suffix keeps names unique even when two snapshots of the same
+  // playlist land in the same millisecond — the atomic write renames over an
+  // existing name, and overwriting an earlier rollback point loses it.
+  const name = `${takenAt.replace(/[:.]/g, "-")}-${slug(playlistName)}-${playlistId}-${randomBytes(3).toString("hex")}.json`;
   const byPosition = new Map(indexEntry.tracks.map((t) => [t.position, t]));
   const rows = [];
   for (let i = 0; i < indexEntry.totalRows; i++) {
@@ -146,14 +149,22 @@ export class PlanRegistry {
     return token;
   }
 
-  // Validates and CONSUMES the token: expiry, binding to the connected app
-  // (the "user" a local plan can be bound to), and digest of the exact list.
-  take(token, clientId) {
+  // Validates and CONSUMES the token: operation kind, expiry, binding to the
+  // connected app (the "user" a local plan can be bound to), and digest of
+  // the exact list. The kind check is load-bearing: without it a token the
+  // user approved for one operation executes a DIFFERENT destructive act
+  // (a removal token driving a restore is a de-facto replace-all).
+  take(token, clientId, kinds) {
     const record = typeof token === "string" ? this.plans.get(token) : undefined;
     if (record) this.plans.delete(token);
     if (!record || this.now() > record.expiresAt) {
       throw new ValidationError(
         "**That removal plan is no longer valid.** Plans expire after 15 minutes and are single-use, and they don't survive a restart. Nothing was changed — run the plan step again and show the user the fresh plan.",
+      );
+    }
+    if (!kinds.includes(record.kind)) {
+      throw new ValidationError(
+        "**That token was minted for a different operation.** A plan token only works with the tool that created it. Nothing was changed — run the right plan/preview step and use its token.",
       );
     }
     if (record.clientId !== clientId) {
@@ -309,11 +320,17 @@ export function createDestructiveTools({ client = spotify, index, registry, enab
           );
         }
         const rowsRemoved = removals.reduce((sum, r) => sum + r.occurrences.length, 0);
-        const rowsKept = entry.totalRows - rowsRemoved + readdUris.length;
-        if (rowsKept === 0) {
-          // R4: no code path empties a playlist.
+        // R4: no code path empties a playlist — measured on PLAYABLE rows
+        // (unavailable/local ghost rows don't count as keeping it alive), and
+        // BEFORE any dedupe re-add, because remove-all-then-re-add passes
+        // through the removed state: a plan whose removal covers every
+        // playable row would leave the playlist empty at least transiently,
+        // and permanently if the re-add fails.
+        if (entry.tracks.length - rowsRemoved === 0) {
           throw new ValidationError(
-            "**This plan would empty the playlist, so Dig refuses it.** Removing every track is not something Dig will do in one action — Spotify has no undo for removed tracks. If the user truly wants the playlist gone, that is deleting (unfollowing) it, which is a separate, off-by-default operation.",
+            wantsDedupe
+              ? "**Dig refuses this dedupe: every track in the playlist is a duplicate copy, so the remove-all-then-re-add step would pass through a fully empty playlist** (and leave it empty if the re-add failed). Spotify has no undo for removed tracks. Workaround: add one extra track first, dedupe, then remove it."
+              : "**This plan would remove every playable track, so Dig refuses it.** Emptying a playlist is not something Dig will do — Spotify has no undo for removed tracks. If the user truly wants the playlist gone, that is deleting (unfollowing) it, which is a separate, off-by-default operation.",
           );
         }
 
@@ -381,7 +398,15 @@ export function createDestructiveTools({ client = spotify, index, registry, enab
         requireString(args, "removal_token", "the removal token from dig_plan_removal");
         requireString(args, "summary", "the plan's summary sentence");
         const clientId = requireOkClientId();
-        const plan = plans.take(args.removal_token, clientId);
+        const plan = plans.take(args.removal_token, clientId, ["removal", "dedupe"]);
+        if (args.summary !== plan.summary) {
+          // The summary is the one string the human sees at the approval
+          // prompt — it must be EXACTLY the plan's sentence or the approval
+          // and the execution can diverge.
+          throw new ValidationError(
+            "**The summary doesn't match the plan's sentence**, so the approval prompt would not describe what this token executes. Nothing was changed — run dig_plan_removal again and pass its summary verbatim.",
+          );
+        }
 
         // R3: full snapshot BEFORE the destructive write. The plan's captured
         // list is authoritative for what the write applies to — the DELETE
@@ -422,8 +447,25 @@ export function createDestructiveTools({ client = spotify, index, registry, enab
         }
 
         // Verify by re-read: none of the removed uris may remain (R3 of
-        // slice E, applied to removal). Direct read — never the cache.
-        const remaining = new Set((await verifyRead(plan.playlistId, budget)).filter(Boolean));
+        // slice E, applied to removal). Direct read — never the cache. A
+        // verify failure after the write landed must NOT surface as a bare
+        // error: the write happened, so report "accepted" with the snapshot
+        // pointer instead of stranding the user with a consumed token.
+        let rowUris;
+        try {
+          rowUris = await verifyRead(plan.playlistId, budget);
+        } catch (err) {
+          const dedupeWarning =
+            plan.kind === "dedupe"
+              ? ` Because this was a dedupe, the kept copies have NOT been re-added yet — the playlist may be missing those tracks until you restore the snapshot or re-add them.`
+              : "";
+          return jsonText({
+            result: plan.kind === "dedupe" ? "partial" : "accepted",
+            snapshot: snapshotFile,
+            note: `The removal was sent to Spotify, but the confirming re-read failed, so Dig cannot prove the outcome. ${err?.message ?? err}${dedupeWarning}\n\nRe-read the playlist when possible (dig_list_playlist_tracks) before planning anything further. The pre-change state is saved as snapshot "${snapshotFile}".`,
+          });
+        }
+        const remaining = new Set(rowUris.filter(Boolean));
         const stillThere = plan.uris.filter((u) => remaining.has(u));
         const removedOk = stillThere.length === 0;
 
@@ -444,7 +486,18 @@ export function createDestructiveTools({ client = spotify, index, registry, enab
               note: `Dedupe stopped midway: the duplicate copies were removed, but re-adding the kept copies did not complete. ${cause}\n\nThe playlist is missing those tracks right now. Re-read it, then either re-add the missing tracks with dig_add_tracks or restore the pre-change state with dig_restore_snapshot("${snapshotFile}").`,
             });
           }
-          const finalUris = new Set((await verifyRead(plan.playlistId, budget)).filter(Boolean));
+          let finalUris;
+          try {
+            finalUris = new Set((await verifyRead(plan.playlistId, budget)).filter(Boolean));
+          } catch (err) {
+            return jsonText({
+              result: "accepted",
+              snapshot: snapshotFile,
+              rows_removed: plan.rowsRemoved,
+              re_added: plan.readdUris.length,
+              note: `Duplicates were removed and the kept copies were re-sent, but the confirming re-read failed, so Dig cannot prove the final state. ${err?.message ?? err}\n\nRe-read the playlist when possible. The pre-change state is saved as snapshot "${snapshotFile}".`,
+            });
+          }
           const readdMissing = plan.readdUris.filter((u) => !finalUris.has(u));
           const result = readdMissing.length === 0 ? "verified" : "partial";
           return jsonText({
@@ -486,6 +539,7 @@ export function createDestructiveTools({ client = spotify, index, registry, enab
           type: "object",
           properties: {
             snapshot: { type: "string", description: "A snapshot file name from the listing. Returns a preview + restore_token; nothing is changed." },
+            into_playlist_id: { type: "string", description: "Optional, with `snapshot`: restore into THIS playlist instead of the snapshot's original (use after an unfollow — create a new playlist first, then restore into it)." },
             restore_token: { type: "string", description: "The token from the preview step. Executes the restore." },
           },
           additionalProperties: false,
@@ -496,7 +550,7 @@ export function createDestructiveTools({ client = spotify, index, registry, enab
 
         // Mode 3: execute an approved restore.
         if (typeof args?.restore_token === "string") {
-          const plan = plans.take(args.restore_token, clientId);
+          const plan = plans.take(args.restore_token, clientId, ["restore"]);
           // R3: snapshot the CURRENT state before this destructive write too.
           const current = await readPlaylist(plan.playlistId, budget);
           const preRestore = writeSnapshot({
@@ -536,8 +590,20 @@ export function createDestructiveTools({ client = spotify, index, registry, enab
             });
           }
           // Verify by re-read: the uri sequence must match the snapshot's.
-          // Direct read — never the cache.
-          const afterUris = (await verifyRead(plan.playlistId, budget)).filter(Boolean);
+          // Direct read — never the cache. A verify failure after the writes
+          // landed reports "accepted" with the pointers, never a bare error.
+          let afterRows;
+          try {
+            afterRows = await verifyRead(plan.playlistId, budget);
+          } catch (err) {
+            return jsonText({
+              result: "accepted",
+              restored_tracks: uris.length,
+              pre_restore_snapshot: preRestore,
+              note: `The restore's writes were sent, but the confirming re-read failed, so Dig cannot prove the final order. ${err?.message ?? err}\n\nRe-read the playlist when possible. The replaced state was saved as "${preRestore}".`,
+            });
+          }
+          const afterUris = afterRows.filter(Boolean);
           const matches = uris.length === afterUris.length && uris.every((u, i) => afterUris[i] === u);
           return jsonText({
             result: matches ? "verified" : "ambiguous",
@@ -557,15 +623,21 @@ export function createDestructiveTools({ client = spotify, index, registry, enab
             throw new ValidationError("**That snapshot holds no restorable tracks**, and Dig never writes an empty playlist. Pick another snapshot.");
           }
           const unavailable = (s.tracks ?? []).length - uris.length;
-          const summary = `Restore "${s.playlist_name}" to its ${uris.length}-track state from ${s.taken_at}`;
+          // Optional retarget: rebuild the snapshot into a DIFFERENT playlist
+          // (the recovery path after an unfollow — the original id is gone).
+          const target = typeof args?.into_playlist_id === "string" && args.into_playlist_id.trim() !== "" ? args.into_playlist_id : s.playlist_id;
+          const summary =
+            target === s.playlist_id
+              ? `Restore "${s.playlist_name}" to its ${uris.length}-track state from ${s.taken_at}`
+              : `Rebuild the ${uris.length}-track snapshot of "${s.playlist_name}" (${s.taken_at}) into playlist ${target}`;
           const token = plans.mint({
             kind: "restore",
-            playlistId: s.playlist_id,
+            playlistId: target,
             snapshotId: s.snapshot_id,
             uris,
             readdUris: [],
             rowsRemoved: 0,
-            digest: digestOf(s.playlist_id, s.snapshot_id, uris),
+            digest: digestOf(target, s.snapshot_id, uris),
             clientId,
             summary,
             sourceSnapshot: args.snapshot,
@@ -574,6 +646,7 @@ export function createDestructiveTools({ client = spotify, index, registry, enab
             plan: {
               playlist: s.playlist_name,
               playlist_id: s.playlist_id,
+              ...(target !== s.playlist_id ? { restores_into: target } : {}),
               taken_at: s.taken_at,
               tracks_restored: uris.length,
               ...(unavailable > 0 ? { unavailable_rows_lost: unavailable } : {}),
@@ -643,12 +716,12 @@ export function createDestructiveTools({ client = spotify, index, registry, enab
             plan: { playlist: entry.name, playlist_id: playlistId, tracks: entry.totalRows, summary },
             confirm_token: token,
             expires_in_minutes: TOKEN_TTL_MS / 60000,
-            warning: "For a playlist the user owns, unfollowing IS deletion. Spotify can recover a deleted playlist for about 90 days; Dig also saves a track-list snapshot first, restorable into a new playlist. Nothing has happened yet.",
+            warning: "For a playlist the user owns, unfollowing IS deletion. Spotify can recover a deleted playlist for about 90 days at spotify.com/account. Dig also saves a track-list snapshot first — to rebuild from it, create a fresh playlist (dig_create_playlist), then dig_restore_snapshot with into_playlist_id. Nothing has happened yet.",
             next: "Show this to the user. Only after they approve, call again with the confirm_token.",
           });
         }
 
-        const plan = plans.take(args.confirm_token, clientId);
+        const plan = plans.take(args.confirm_token, clientId, ["unfollow"]);
         if (plan.playlistId !== playlistId) {
           throw new ValidationError("**That token was minted for a different playlist.** Nothing was changed — run the preview step again.");
         }

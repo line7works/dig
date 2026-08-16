@@ -10,6 +10,8 @@ import { CONNECT_TOOL, digConnect } from "./connect.mjs";
 import { createReadTools } from "./read-tools.mjs";
 import { createWriteTools } from "./write-tools.mjs";
 import { createDestructiveTools } from "./destructive-tools.mjs";
+import { FindIndex } from "./find-index.mjs";
+import { spotify } from "./spotify-client.mjs";
 import { SERVER_INSTRUCTIONS } from "./instructions.mjs";
 import { checkClientId } from "./config.mjs";
 
@@ -30,12 +32,18 @@ log(`server started, node ${process.version}, client id state: ${checkClientId()
 
 // Registry: every tool is a { def, handler } pair; dispatch is by name so a
 // new tool cannot be listed without also being callable (and vice versa).
+// ONE FindIndex for every tool family: the destructive tools' post-write
+// cache invalidation must reach the same cache the read tools serve finds
+// from, or a verified removal can still be reported present by a stale
+// cached entry (Spotify's post-delete metadata staleness, slice F finding).
+const sharedIndex = new FindIndex(spotify);
+
 const REGISTRY = [
   { def: STATUS_TOOL, handler: async () => ({ text: digStatus(), isError: false }) },
   { def: CONNECT_TOOL, handler: () => digConnect() },
-  ...createReadTools(),
-  ...createWriteTools(),
-  ...createDestructiveTools(),
+  ...createReadTools({ index: sharedIndex }),
+  ...createWriteTools({ index: sharedIndex }),
+  ...createDestructiveTools({ index: sharedIndex }),
 ];
 const HANDLERS = new Map(REGISTRY.map((t) => [t.def.name, t.handler]));
 const TOOLS = REGISTRY.map((t) => t.def);
