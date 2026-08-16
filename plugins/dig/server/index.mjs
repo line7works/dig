@@ -10,6 +10,7 @@ import { CONNECT_TOOL, digConnect } from "./connect.mjs";
 import { createReadTools } from "./read-tools.mjs";
 import { createWriteTools } from "./write-tools.mjs";
 import { createDestructiveTools } from "./destructive-tools.mjs";
+import { createDoctorTool } from "./doctor.mjs";
 import { FindIndex } from "./find-index.mjs";
 import { spotify } from "./spotify-client.mjs";
 import { SERVER_INSTRUCTIONS } from "./instructions.mjs";
@@ -41,6 +42,7 @@ const sharedIndex = new FindIndex(spotify);
 const REGISTRY = [
   { def: STATUS_TOOL, handler: async () => ({ text: digStatus(), isError: false }) },
   { def: CONNECT_TOOL, handler: () => digConnect() },
+  ...createDoctorTool(),
   ...createReadTools({ index: sharedIndex }),
   ...createWriteTools({ index: sharedIndex }),
   ...createDestructiveTools({ index: sharedIndex }),

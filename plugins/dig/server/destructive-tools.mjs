@@ -206,8 +206,14 @@ const DEFINITE = (err) => err instanceof SpotifyApiError || err instanceof RateL
 export function createDestructiveTools({ client = spotify, index, registry, enableUnfollow, now = Date.now } = {}) {
   const findIndex = index ?? new FindIndex(client);
   const plans = registry ?? new PlanRegistry({ now });
-  const unfollowEnabled =
-    enableUnfollow ?? /^(1|true|yes)$/i.test(process.env.DIG_ENABLE_UNFOLLOW ?? process.env.CLAUDE_PLUGIN_OPTION_DIG_ENABLE_UNFOLLOW ?? "");
+  // The userConfig path (.mcp.json substitution) always defines the primary
+  // env var, possibly blank or as an unsubstituted "${user_config...}"
+  // placeholder — neither may mask the CLAUDE_PLUGIN_OPTION auto-export
+  // fallback (the slice-A config lesson).
+  const unfollowFlag =
+    [process.env.DIG_ENABLE_UNFOLLOW, process.env.CLAUDE_PLUGIN_OPTION_DIG_ENABLE_UNFOLLOW]
+      .find((v) => v && !v.startsWith("${")) ?? "";
+  const unfollowEnabled = enableUnfollow ?? /^(1|true|yes)$/i.test(unfollowFlag.trim());
 
   // Read of the playlist for PLANNING (index rebuilds when snapshot_id moved).
   async function readPlaylist(playlistId, budget) {

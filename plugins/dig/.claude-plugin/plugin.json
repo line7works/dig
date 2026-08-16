@@ -7,6 +7,11 @@
       "type": "string",
       "title": "Spotify Client ID",
       "description": "Your Spotify app's Client ID (32 letters and numbers, from developer.spotify.com/dashboard). Never paste your Client Secret."
+    },
+    "dig_enable_unfollow": {
+      "type": "string",
+      "title": "Enable playlist deletion",
+      "description": "Type true to enable the dig_unfollow_playlist tool. WARNING: for playlists you own, unfollowing IS deletion (Spotify keeps deleted playlists recoverable for 90 days at spotify.com). Leave blank to keep it off. After changing this, start a new chat."
     }
   }
 }
