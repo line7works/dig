@@ -118,7 +118,7 @@ Acceptance criteria:
 Footprint: `plugins/dig/server/`, `plugins/dig/test/`.
 Not in this slice: removal of any kind.
 Depends on: Slice C, Slice D
-Status: not started
+Status: built
 
 ## Slice F — Destructive operations
 Goal: Removal that cannot fire by accident, cannot wipe a playlist, and can always be rolled back from a local snapshot.
@@ -216,6 +216,18 @@ Status: not started
 - `dig_status`/`dig_connect` tool defs rebuilt through the R6 derivation (`defineTool` access classes local/connect) so every tool, not just the read seven, derives its annotations · builder call
 - Server instructions delivered via the `instructions` field of the initialize result (1,667 bytes of the 2,048 budget) · builder call
 
+### 2026-08-15 · Slice E
+- dig_add_tracks proposal shape is {title, artist, version?, duration_seconds?}; a version is folded into the title as a parenthetical so the matcher's version-class gate sees it, and a proposed duration is never duration_trusted (a duration from the model's memory must not veto — research §7 G4) · builder call
+- Bounds: 20 proposals per dig_add_tracks call (each costs one search request); dig_reorder capped at 200 rows (each out-of-place row is one move request) with a clear refusal above it · builder call
+- When no proposal clears the confidence bar, dig_add_tracks reports result "no_write" — the four-word vocabulary describes writes that happened; a call that wrote nothing says so plainly instead of borrowing "verified" · builder call
+- Never-blind-retry implemented as: an add whose POST fails with an unknown outcome (timeout/network drop) is not resent; the confirming re-read decides verified/partial/ambiguous. A definite SpotifyApiError still surfaces as the mapped instruction · builder call
+- R4 concurrency: snapshot_id passed on every reorder move (the one additive items op that supports a precondition), chained from each move's response; a 400/409 on /items mid-reorder is treated as a concurrent edit and returns the re-plan message with moves_applied · builder call
+- dig_update_playlist_details compares descriptions after unescaping the HTML entities Spotify applies on read; a description-only residual mismatch reports "accepted", field mismatches report "ambiguous" · builder call
+- In-scope plumbing (named by the handoff): spotify-client gained method/body support and empty-200-body tolerance; read-tools' ValidationError/requireString/wrapTools exported and shared so write tools validate and error identically; tool-def gained the `write` access class (readOnly false, destructive false, idempotent false) · builder call
+- Server instructions extended with two write-rule lines (uncertain-never-added, result vocabulary); the 2 KB budget test still passes · builder call
+- index.mjs EOF exit now drains stdout before exiting — the larger tools/list frame exposed a truncation the old synchronous process.exit caused (caught by the existing stdout-purity suite) · builder call
+- Tony's standing ruling held: the matcher's free-text reason strings were passed through as evidence unchanged; slice E did not need structured fields · builder call
+
 ## Deviations
 
 ### 2026-08-15 · Slice A
@@ -236,6 +248,9 @@ Status: not started
 ### 2026-08-15 · Slice C
 - none
 
+### 2026-08-15 · Slice E
+- none
+
 ## Discovered
 
 ### 2026-08-15 · Slice A
@@ -252,6 +267,12 @@ Status: not started
 ### 2026-08-15 · Slice C live AC1
 - Slice B's waived AC3 got its live exercise as planned: four separate fresh server processes reused the stored refresh token without re-auth (dig_status showed the connected account; all authed reads succeeded)
 - Live catalog search returned two distinct track IDs for the same recording (identical title, artist, and duration_ms) — the slice-D verifyCandidates tie-order MINOR (matching.mjs:342) is a real-world case, relevant when slice E wires the matcher
+
+### 2026-08-15 · Slice E live AC1
+- Creating a playlist with public:false read back public:true — Spotify's public flag reflects "shown on profile", not the privacy setting, a known quirk; dig_create_playlist verifies existence + name, and slice G's docs should word this so users aren't alarmed
+- Spotify's dash-composed version form confirmed in the wild: a proposal for "(2011 remaster)" matched "Wish You Were Here - 2011 Remaster" cleanly through the add flow (slice-D R2 proven live)
+- The slice-D tie-order MINOR (matching.mjs:342) reproduced live: two distinct "Bohemian Rhapsody" track IDs at identical verdict+score; "best" was input order, exactly as flagged
+- AC1 left a throwaway playlist "Dig slice-E throwaway" (2XqanBFQWKCZC178vHS91A) on the test account — safe to delete, useful for slice F's live AC
 
 ## Punch list
 
