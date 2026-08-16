@@ -5,6 +5,7 @@
 import { defineTool } from "./tool-def.mjs";
 import { checkClientId, resolveUnfollowFlag, usable, BAD_CLIENT_ID_MESSAGE } from "./config.mjs";
 import { writeConfigPatch } from "./config-file.mjs";
+import { readTokenFile } from "./token-store.mjs";
 
 export const SET_CLIENT_ID_TOOL = defineTool({
   name: "dig_set_client_id",
@@ -55,20 +56,39 @@ export function createConfigTools({ notifyToolsChanged = () => {} } = {}) {
     if (check.state !== "ok") {
       return { text: check.message, isError: true };
     }
+    // A stored sign-in is bound to the app it was made with: changing the
+    // Client ID makes the next API call discard it (token-store's client_id
+    // binding). Say so BEFORE it surprises anyone.
+    const token = readTokenFile();
+    const disconnects = Boolean(token?.refresh_token && token.client_id && token.client_id !== check.clientId);
     try {
-      writeConfigPatch({ spotify_client_id: check.clientId });
+      await writeConfigPatch({ spotify_client_id: check.clientId });
     } catch (err) {
       return { text: err.message, isError: true };
     }
     const after = checkClientId();
-    const lines = ["Client ID stored. It's active right now — no restart or new chat needed."];
-    if (after.source === "env" && after.clientId !== check.clientId) {
+    const active = after.state === "ok" && after.clientId === check.clientId;
+    const lines = [];
+    if (active) {
+      lines.push("Client ID stored. It's active right now — no restart or new chat needed.");
+    } else {
       lines.push(
+        "Client ID stored in Dig's config file — but it is NOT active yet: the plugin's settings hold a different value, and settings win while present.",
         "",
-        "Note: a different Client ID is also set in the plugin's settings, and that one wins while it's present. dig_status shows which value is active.",
+        "To use the value you just pasted, clear (or fix) the plugin's spotify_client_id setting. dig_status shows which value is active.",
       );
     }
-    lines.push("", "Next step: run dig_connect to sign in to Spotify through the browser.");
+    if (disconnects) {
+      lines.push(
+        "",
+        "Heads up: the current Spotify sign-in belongs to a different app, so it will be disconnected — run dig_connect to sign in again.",
+      );
+    }
+    lines.push(
+      "",
+      "(If the value you pasted came from a \"View client secret\" link, stop — that's the Client Secret, not the Client ID. Dig never needs the Secret; use the value labelled Client ID.)",
+    );
+    if (active) lines.push("", "Next step: run dig_connect to sign in to Spotify through the browser.");
     return { text: lines.join("\n"), isError: false };
   }
 
@@ -77,7 +97,7 @@ export function createConfigTools({ notifyToolsChanged = () => {} } = {}) {
       return { text: "dig_enable_playlist_deletion needs `enable`: true or false.", isError: true };
     }
     try {
-      writeConfigPatch({ dig_enable_unfollow: args.enable ? "true" : "false" });
+      await writeConfigPatch({ dig_enable_unfollow: args.enable ? "true" : "false" });
     } catch (err) {
       return { text: err.message, isError: true };
     }

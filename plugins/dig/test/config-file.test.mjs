@@ -46,8 +46,8 @@ afterEach(() => {
 
 // --- R1: resolution precedence -------------------------------------------
 
-test("env wins over the config file when both are usable, and the mismatch is reported", () => {
-  writeConfigPatch({ spotify_client_id: OTHER });
+test("env wins over the config file when both are usable, and the mismatch is reported", async () => {
+  await writeConfigPatch({ spotify_client_id: OTHER });
   process.env.SPOTIFY_CLIENT_ID = VALID;
   const r = checkClientId();
   assert.equal(r.state, "ok");
@@ -56,15 +56,15 @@ test("env wins over the config file when both are usable, and the mismatch is re
   assert.equal(r.mismatch, true);
 });
 
-test("matching env and file values report no mismatch", () => {
-  writeConfigPatch({ spotify_client_id: VALID });
+test("matching env and file values report no mismatch", async () => {
+  await writeConfigPatch({ spotify_client_id: VALID });
   process.env.SPOTIFY_CLIENT_ID = VALID;
   const r = checkClientId();
   assert.equal(r.mismatch, false);
 });
 
-test("file fallback used when env is blank or an unsubstituted placeholder", () => {
-  writeConfigPatch({ spotify_client_id: VALID });
+test("file fallback used when env is blank or an unsubstituted placeholder", async () => {
+  await writeConfigPatch({ spotify_client_id: VALID });
   for (const v of ["", "   ", "${user_config.spotify_client_id}"]) {
     process.env.SPOTIFY_CLIENT_ID = v;
     delete process.env.CLAUDE_PLUGIN_OPTION_SPOTIFY_CLIENT_ID;
@@ -87,27 +87,52 @@ test("a corrupt config file is ignored, not fatal", () => {
   assert.equal(checkClientId().state, "unconfigured");
 });
 
-// --- R1: unfollow flag resolution -----------------------------------------
-
-test("unfollow flag: both env names still honored, and they win over the file", () => {
-  writeConfigPatch({ dig_enable_unfollow: "true" });
-  process.env.DIG_ENABLE_UNFOLLOW = "false";
-  assert.deepEqual(resolveUnfollowFlag(), { enabled: false, source: "env" });
-  delete process.env.DIG_ENABLE_UNFOLLOW;
-  process.env.CLAUDE_PLUGIN_OPTION_DIG_ENABLE_UNFOLLOW = "false";
-  assert.deepEqual(resolveUnfollowFlag(), { enabled: false, source: "env" });
+test("type-corrupt config values (boolean/number) are ignored, never a crash", () => {
+  writeFileSync(
+    join(dir, "config.json"),
+    JSON.stringify({ spotify_client_id: 123, dig_enable_unfollow: true }),
+    { mode: 0o600 },
+  );
+  assert.equal(checkClientId().state, "unconfigured");
+  assert.deepEqual(resolveUnfollowFlag(), { enabled: false, source: "none", mismatch: false });
 });
 
-test("unfollow flag: file fallback when env names are blank/placeholder", () => {
-  writeConfigPatch({ dig_enable_unfollow: "true" });
+test("type-corrupt config.json does not kill server startup", async () => {
+  writeFileSync(join(dir, "config.json"), JSON.stringify({ dig_enable_unfollow: true }), { mode: 0o600 });
+  const frames = await runServerSession(
+    [
+      { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {} } },
+      { jsonrpc: "2.0", id: 2, method: "tools/list" },
+    ],
+    { CLAUDE_PLUGIN_DATA: dir },
+  );
+  assert.ok(frames.find((f) => f.id === 2)?.result?.tools, "tools/list must answer");
+});
+
+// --- R1: unfollow flag resolution -----------------------------------------
+
+test("unfollow flag: both env names still honored, they win over the file, and the disagreement is reported", async () => {
+  await writeConfigPatch({ dig_enable_unfollow: "true" });
+  process.env.DIG_ENABLE_UNFOLLOW = "false";
+  assert.deepEqual(resolveUnfollowFlag(), { enabled: false, source: "env", mismatch: true });
+  delete process.env.DIG_ENABLE_UNFOLLOW;
+  process.env.CLAUDE_PLUGIN_OPTION_DIG_ENABLE_UNFOLLOW = "false";
+  assert.deepEqual(resolveUnfollowFlag(), { enabled: false, source: "env", mismatch: true });
+  process.env.CLAUDE_PLUGIN_OPTION_DIG_ENABLE_UNFOLLOW = "true";
+  assert.deepEqual(resolveUnfollowFlag(), { enabled: true, source: "env", mismatch: false });
+});
+
+test("unfollow flag: file fallback when env names are blank/placeholder", async () => {
+  await writeConfigPatch({ dig_enable_unfollow: "true" });
   process.env.DIG_ENABLE_UNFOLLOW = "${user_config.dig_enable_unfollow}";
   const r = resolveUnfollowFlag();
   assert.equal(r.enabled, true);
   assert.equal(r.source, "file");
+  assert.equal(r.mismatch, false);
 });
 
 test("unfollow flag: nothing set anywhere is disabled, source none", () => {
-  assert.deepEqual(resolveUnfollowFlag(), { enabled: false, source: "none" });
+  assert.deepEqual(resolveUnfollowFlag(), { enabled: false, source: "none", mismatch: false });
 });
 
 // --- R2: dig_set_client_id ------------------------------------------------
@@ -141,12 +166,34 @@ test("dig_set_client_id persists 0600, takes effect immediately, and names dig_c
   assert.equal(check.source, "file");
 });
 
-test("dig_set_client_id warns when a different plugin-settings value stays in charge", async () => {
+test("dig_set_client_id is honest when a plugin-settings value stays in charge (valid OR invalid env)", async () => {
+  const { dig_set_client_id } = toolsByName();
+  // Valid competing env value.
   process.env.SPOTIFY_CLIENT_ID = OTHER;
+  const r1 = await dig_set_client_id.handler({ client_id: VALID });
+  assert.equal(r1.isError, false);
+  assert.match(r1.text, /NOT active yet/);
+  assert.doesNotMatch(r1.text, /active right now/);
+  // Invalid-shape env value must not be reported as active either.
+  process.env.SPOTIFY_CLIENT_ID = "my-app-name";
+  const r2 = await dig_set_client_id.handler({ client_id: VALID });
+  assert.equal(r2.isError, false);
+  assert.match(r2.text, /NOT active yet/);
+  assert.doesNotMatch(r2.text, /active right now/);
+  // And status/doctor surface the masked file value in the invalid state.
+  assert.match(digStatus(), /wrong shape[\s\S]*DIFFERENT Client IDs/);
+});
+
+test("dig_set_client_id warns before disconnecting a sign-in bound to a different app", async () => {
+  const { writeFileAtomic0600 } = await import("../server/token-store.mjs");
+  writeFileAtomic0600(
+    join(dir, "token.json"),
+    JSON.stringify({ refresh_token: "r", client_id: OTHER, obtained_at: 1 }),
+  );
   const { dig_set_client_id } = toolsByName();
   const r = await dig_set_client_id.handler({ client_id: VALID });
   assert.equal(r.isError, false);
-  assert.match(r.text, /different Client ID .* plugin's settings|plugin's settings, and that one wins/);
+  assert.match(r.text, /will be disconnected/);
 });
 
 test("dig_set_client_id without a data directory fails with instructions, not a crash", async () => {
@@ -189,32 +236,50 @@ test("dig_enable_playlist_deletion writes the flag, repeats the deletion warning
 
 // --- AC4: status and doctor name the active source --------------------------
 
-test("dig_status names the source in all three states", async () => {
-  assert.match(digStatus(), /not configured \(no plugin setting, nothing in Dig's config file\)/);
-  writeConfigPatch({ spotify_client_id: VALID });
-  assert.match(digStatus(), /Source: Dig's config file \(set in chat\)/);
+test("dig_status names the source in all three states, plus the unfollow flag's state and source", async () => {
+  const none = digStatus();
+  assert.match(none, /not configured \(no plugin setting, nothing in Dig's config file\)/);
+  assert.match(none, /Playlist deletion \(dig_unfollow_playlist\): disabled\./);
+  await writeConfigPatch({ spotify_client_id: VALID, dig_enable_unfollow: "true" });
+  const file = digStatus();
+  assert.match(file, /Source: Dig's config file \(set in chat\)/);
+  assert.match(file, /Playlist deletion \(dig_unfollow_playlist\): ENABLED\. Source: Dig's config file/);
   process.env.SPOTIFY_CLIENT_ID = OTHER;
+  process.env.DIG_ENABLE_UNFOLLOW = "false";
   const s = digStatus();
   assert.match(s, /Source: plugin settings/);
   assert.match(s, /DIFFERENT Client IDs/);
+  assert.match(s, /Playlist deletion \(dig_unfollow_playlist\): disabled\. Source: plugin settings/);
+  assert.match(s, /DISAGREE about playlist deletion/);
 });
 
-test("dig_doctor names the source in all three states", async () => {
+test("dig_doctor names the source in all three states and reports the unfollow flag", async () => {
   const [{ handler: doctor }] = createDoctorTool({
     client: { request: async () => ({ display_name: "Probe" }) },
     deps: { readToken: () => null, signIn: () => null },
   });
   assert.match((await doctor()).text, /not configured \(no plugin setting, nothing in Dig's config file\)/);
-  writeConfigPatch({ spotify_client_id: VALID });
-  assert.match((await doctor()).text, /Source: Dig's config file \(set in chat\)/);
+  await writeConfigPatch({ spotify_client_id: VALID });
+  const fileOut = (await doctor()).text;
+  assert.match(fileOut, /Source: Dig's config file \(set in chat\)/);
+  assert.match(fileOut, /Playlist deletion \(dig_unfollow_playlist\): disabled/);
   process.env.SPOTIFY_CLIENT_ID = OTHER;
   const out = (await doctor()).text;
   assert.match(out, /Source: plugin settings/);
   assert.match(out, /DIFFERENT Client IDs/);
+  // Invalid-shape env: the masked file value must still surface.
+  process.env.SPOTIFY_CLIENT_ID = "my-app-name";
+  const bad = (await doctor()).text;
+  assert.match(bad, /wrong shape \(source: plugin settings\)/);
+  assert.match(bad, /DIFFERENT Client IDs/);
 });
 
 // --- R2/R3 at the real server boundary: same process, no restart ------------
 
+// Sequential session: each frame is sent only after the previous frame's
+// reply arrived, mirroring a real host — tool handlers are async, so firing
+// all frames in one chunk would race a config write against the status read
+// that checks it.
 async function runServerSession(frames, env) {
   const child = spawn(process.execPath, [SERVER], {
     env: {
@@ -229,16 +294,40 @@ async function runServerSession(frames, env) {
   });
   let stdout = "";
   let stderr = "";
-  child.stdout.on("data", (d) => (stdout += d));
+  const received = [];
+  let notifyArrival = null;
+  child.stdout.on("data", (d) => {
+    stdout += d;
+    let nl;
+    while ((nl = stdout.indexOf("\n")) !== -1) {
+      const line = stdout.slice(0, nl).trim();
+      stdout = stdout.slice(nl + 1);
+      if (line) received.push(JSON.parse(line));
+    }
+    notifyArrival?.();
+  });
   child.stderr.on("data", (d) => (stderr += d));
-  for (const f of frames) child.stdin.write(JSON.stringify(f) + "\n");
-  child.stdin.end();
-  const [code] = await Promise.race([
-    once(child, "exit"),
-    new Promise((_, rej) => setTimeout(() => { child.kill("SIGKILL"); rej(new Error("server did not exit within 10s")); }, 10_000).unref()),
-  ]);
+  const deadline = setTimeout(() => child.kill("SIGKILL"), 10_000);
+  deadline.unref();
+  try {
+    for (const f of frames) {
+      child.stdin.write(JSON.stringify(f) + "\n");
+      const t0 = Date.now();
+      while (!received.some((r) => r.id === f.id)) {
+        if (Date.now() - t0 > 8000) throw new Error(`no reply to id ${f.id} within 8s; stderr: ${stderr.slice(0, 400)}`);
+        await new Promise((resolve) => {
+          notifyArrival = resolve;
+          setTimeout(resolve, 50).unref();
+        });
+      }
+    }
+  } finally {
+    child.stdin.end();
+  }
+  const [code] = await once(child, "exit");
+  clearTimeout(deadline);
   assert.equal(code, 0, `server exited nonzero; stderr: ${stderr.slice(0, 400)}`);
-  return stdout.trim().split("\n").map((l) => JSON.parse(l));
+  return received;
 }
 
 test("one server process: set Client ID in chat, then status serves it — no restart", async () => {
@@ -257,19 +346,29 @@ test("one server process: set Client ID in chat, then status serves it — no re
   assert.match(text(4), /configured and looks valid .* Source: Dig's config file/);
 });
 
-test("one server process: enable deletion in chat, tools/list re-evaluates — no restart", async () => {
+test("one server process: enable deletion in chat, tools/list AND tools/call re-evaluate — no restart", async () => {
   const frames = await runServerSession(
     [
       { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {} } },
       { jsonrpc: "2.0", id: 2, method: "tools/list" },
-      { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "dig_enable_playlist_deletion", arguments: { enable: true } } },
-      { jsonrpc: "2.0", id: 4, method: "tools/list" },
+      // The call-side gate: a disabled-but-registered tool must be REFUSED at
+      // tools/call, exactly like an unknown tool — hidden must mean uncallable.
+      { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "dig_unfollow_playlist", arguments: { playlist_id: "x" } } },
+      { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "dig_enable_playlist_deletion", arguments: { enable: true } } },
+      { jsonrpc: "2.0", id: 5, method: "tools/list" },
+      // After the in-session enable, the same call must reach the real
+      // handler (any tool result, success or isError — not a protocol error).
+      { jsonrpc: "2.0", id: 6, method: "tools/call", params: { name: "dig_unfollow_playlist", arguments: { playlist_id: "x" } } },
     ],
     { CLAUDE_PLUGIN_DATA: dir },
   );
-  const names = (id) => frames.find((f) => f.id === id).result.tools.map((t) => t.name);
+  const frame = (id) => frames.find((f) => f.id === id);
+  const names = (id) => frame(id).result.tools.map((t) => t.name);
   assert.ok(!names(2).includes("dig_unfollow_playlist"), "must start absent");
-  assert.ok(names(4).includes("dig_unfollow_playlist"), "must appear after enable, same process");
+  assert.equal(frame(3).error?.code, -32602, "disabled tool must be refused at tools/call with -32602");
+  assert.ok(names(5).includes("dig_unfollow_playlist"), "must appear after enable, same process");
+  assert.ok(frame(6).result, "enabled tool must reach its handler (tool result, not protocol error)");
+  assert.equal(frame(6).error, undefined);
   // The enable also announces the change to the host.
   assert.ok(
     frames.some((f) => f.method === "notifications/tools/list_changed"),

@@ -3,9 +3,9 @@
 // values a user sets from chat persist here — config.json in the plugin data
 // directory, 0600 atomic. Resolution contract: env wins when usable; this
 // file is the fallback, never the override.
-import { readFileSync, statSync, chmodSync } from "node:fs";
-import { join } from "node:path";
-import { dataDir, writeFileAtomic0600 } from "./token-store.mjs";
+import { readFileSync, statSync, chmodSync, mkdirSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { dataDir, writeFileAtomic0600, acquireLock } from "./token-store.mjs";
 import { log } from "./log.mjs";
 
 export function configFilePath(dir = dataDir()) {
@@ -24,21 +24,37 @@ export function readConfigFile(file = configFilePath()) {
       chmodSync(file, 0o600);
     }
     const parsed = JSON.parse(readFileSync(file, "utf8"));
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : null;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+    // Type corruption must be as non-fatal as syntax corruption: a hand-edited
+    // boolean/number value (e.g. {"dig_enable_unfollow": true}) would
+    // otherwise reach usable()'s .trim() and kill the server at startup.
+    // Only string values survive the read.
+    const strings = Object.fromEntries(Object.entries(parsed).filter(([, v]) => typeof v === "string"));
+    return Object.keys(strings).length > 0 ? strings : null;
   } catch {
     return null;
   }
 }
 
-// Merge-writes a patch into the config file (0600, atomic). Throws with a
+// Merge-writes a patch into the config file (0600, atomic). The exclusive
+// lock covers the whole read-merge-write: two sessions (desktop + terminal)
+// patching different keys must not lose each other's update. Throws with a
 // plain-language error when the host provided no data directory.
-export function writeConfigPatch(patch, file = configFilePath()) {
+export async function writeConfigPatch(patch, file = configFilePath()) {
   if (!file) {
     throw new Error(
       "Dig has no data directory (CLAUDE_PLUGIN_DATA is unset), so it cannot store settings. Restart Claude Code; if it persists, reinstall the Dig plugin.",
     );
   }
-  const merged = { ...(readConfigFile(file) ?? {}), ...patch };
-  writeFileAtomic0600(file, JSON.stringify(merged, null, 2) + "\n");
-  return merged;
+  // The lock file needs the directory to exist before the atomic writer's
+  // own mkdir runs.
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  const release = await acquireLock(file);
+  try {
+    const merged = { ...(readConfigFile(file) ?? {}), ...patch };
+    writeFileAtomic0600(file, JSON.stringify(merged, null, 2) + "\n");
+    return merged;
+  } finally {
+    release();
+  }
 }

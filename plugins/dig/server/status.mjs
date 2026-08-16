@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import { defineTool } from "./tool-def.mjs";
-import { checkClientId } from "./config.mjs";
+import { checkClientId, resolveUnfollowFlag, CLIENT_ID_MISMATCH_NOTE } from "./config.mjs";
 import { readTokenFile, tokenAge, ageWarning } from "./token-store.mjs";
 import { activeSignIn } from "./auth.mjs";
 
@@ -21,6 +21,18 @@ export const STATUS_TOOL = defineTool({
 // Dig's own config file written by dig_set_client_id.
 export function describeSource(source) {
   return source === "env" ? "plugin settings" : source === "file" ? "Dig's config file (set in chat)" : "none";
+}
+
+// R4 for the unfollow opt-in: deletion's on/off state, where it comes from,
+// and any env-vs-file disagreement (R6) — reported, never silently resolved.
+export function describeUnfollow() {
+  const flag = resolveUnfollowFlag();
+  const state = flag.enabled ? "ENABLED" : "disabled";
+  const src = flag.source === "none" ? "" : ` Source: ${describeSource(flag.source)}.`;
+  const mm = flag.mismatch
+    ? "\n⚠ The plugin's settings and Dig's config file DISAGREE about playlist deletion — the plugin settings win while present."
+    : "";
+  return `Playlist deletion (dig_unfollow_playlist): ${state}.${src}${mm}`;
 }
 
 function describeDataDir() {
@@ -48,18 +60,20 @@ export function digStatus() {
   const lines = [];
   if (id.state === "ok") {
     lines.push(`Client ID: configured and looks valid (32 characters). Source: ${describeSource(id.source)}.`);
-    if (id.mismatch) {
-      lines.push("⚠ The plugin's settings and Dig's own config file hold DIFFERENT Client IDs — the plugin settings win. If that's not what you want, clear the plugin setting or set the right ID with dig_set_client_id.");
-    }
+    if (id.mismatch) lines.push(`⚠ ${CLIENT_ID_MISMATCH_NOTE}`);
   } else {
     lines.push(
       id.state === "invalid"
         ? `Client ID: configured but wrong shape. Source: ${describeSource(id.source)}.`
         : "Client ID: not configured (no plugin setting, nothing in Dig's config file).",
     );
+    // An invalid plugin setting can be hiding a perfectly good value the
+    // user stored from chat — the one fact a support conversation needs.
+    if (id.mismatch) lines.push(`⚠ ${CLIENT_ID_MISMATCH_NOTE}`);
     lines.push("", id.message, "");
   }
   lines.push(describeAuth());
+  lines.push(describeUnfollow());
   lines.push(describeDataDir());
   return lines.join("\n");
 }

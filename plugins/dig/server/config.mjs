@@ -25,7 +25,9 @@ Dig needs the Client ID of your own (free) Spotify developer app. To set it:
 Nothing else is broken — Dig just doesn't know which app is yours yet.`;
 
 function usable(raw) {
-  const v = (raw ?? "").trim();
+  // Defensive: config values can come from a hand-edited file; a non-string
+  // is no value, never a crash.
+  const v = typeof raw === "string" ? raw.trim() : "";
   // Empty, or an unsubstituted "${user_config...}" placeholder, is no value.
   return v !== "" && !v.startsWith("${") ? v : null;
 }
@@ -51,8 +53,11 @@ function resolveClientId() {
 }
 
 // Returns { state: "unconfigured" | "invalid" | "ok", clientId, message,
-// source: "env" | "file" | "none", mismatch }. `raw` bypasses resolution for
-// direct validation of a candidate value (source "none").
+// source: "env" | "file" | "none", mismatch }. `mismatch` means a usable
+// value in Dig's config file is being overridden by the plugin-settings env
+// — reported in EVERY state (an invalid env masking a valid file value is
+// exactly the case a support conversation needs to see). `raw` bypasses
+// resolution for direct validation of a candidate value (source "none").
 export function checkClientId(raw) {
   const resolved = raw !== undefined ? { value: usable(raw), source: "none", mismatch: false } : resolveClientId();
   const { value, source, mismatch } = resolved;
@@ -65,16 +70,25 @@ export function checkClientId(raw) {
   return { state: "ok", clientId: value, message: null, source, mismatch };
 }
 
+// The one sentence both status and doctor print when the plugin-settings env
+// is overriding a value the user stored from chat.
+export const CLIENT_ID_MISMATCH_NOTE =
+  "The plugin's settings and Dig's own config file hold DIFFERENT Client IDs — the plugin settings win while present. If that's not what you want, clear the plugin setting (or fix it) so the value set in chat takes over.";
+
 // Resolves the unfollow opt-in the same way (R1): env names first — the
 // primary may be blank or an unsubstituted placeholder and must not mask the
 // auto-export fallback — then Dig's config file. Returns { enabled, source }.
 export function resolveUnfollowFlag() {
+  const truthy = (v) => v !== null && /^(1|true|yes)$/i.test(v);
   const env =
     usable(process.env.DIG_ENABLE_UNFOLLOW) ?? usable(process.env.CLAUDE_PLUGIN_OPTION_DIG_ENABLE_UNFOLLOW);
   const file = usable(readConfigFile()?.dig_enable_unfollow);
   const raw = env ?? file;
   return {
-    enabled: raw !== null && /^(1|true|yes)$/i.test(raw),
+    enabled: truthy(raw),
     source: env !== null ? "env" : file !== null ? "file" : "none",
+    // Both sources present and disagreeing on the outcome (R6): reported by
+    // status/doctor, never silently resolved.
+    mismatch: env !== null && file !== null && truthy(env) !== truthy(file),
   };
 }
