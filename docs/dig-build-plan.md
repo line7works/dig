@@ -200,7 +200,7 @@ Acceptance criteria:
 Footprint: `README.md`, `LICENSE`, `.claude-plugin/marketplace.json`, `plugins/dig/.claude-plugin/plugin.json`, `plugins/dig/test/`.
 Not in this slice: creating the GitHub repo, pushing, or any publish action — gated on Tony's explicit word.
 Depends on: Slice G
-Status: built
+Status: signed off with conditions
 
 ## Open questions
 - License for the public repo (MIT is the conventional default for this kind of tool; Tony decides by slice H). — RESOLVED 2026-08-16: Tony chose MIT.
@@ -294,6 +294,8 @@ Status: built
 - R3 metadata verified as already final: marketplace name `dig` + plugin name `dig` make `/plugin install dig@dig` work as printed; `line7works/dig` is the GitHub repo name, which only exists at publish — no metadata change needed beyond the version · builder call
 - README avoids the no-localhost forbidden word by construction (it is scanned by the tree grep, unlike docs/) · builder call
 - AC2's positional check strengthened beyond presence: README test asserts Premium appears before both the Install section and the first heading (the spec's "first paragraph, above install instructions") · builder call
+
+## Deviations
 
 ### 2026-08-15 · Slice A
 - none
@@ -609,3 +611,15 @@ WAIVED (per user) · 2026-08-16 · MAJOR · docs/dig-build-plan.md (Build assump
 No fix-introduced defects found; suite 187/187
 
 CLOSED (per user) · 2026-08-16 · docs/dig-build-plan.md (Deviations · Slice G, AC1 entry) · AC1 fresh-eyes run — Tony ruled the 2026-08-16 live desktop run (paste-in-chat config → connect → live list, Pour Guys dummy account) satisfies it. Self-add note: Tony HAD added himself under User Management on both apps, so the allowlist-trap enforcement question remains unanswered — setup skill step 4 stays loud. Next test is a real first user (Jon Bartlett), after slice H.
+
+### 2026-08-16 — review: Slice H
+- MAJOR · docs/dig-build-plan.md:288 · the slice-H ledger edit deleted the `## Deviations` H2 heading — every deviation block for slices A–H now sits misfiled under `## Build assumptions` · anyone grepping the doc for "## Deviations" finds nothing; the record structure signoff/preflight key on is corrupted · slice H review (2 lenses converged)
+- MAJOR · plugins/dig/package-lock.json:3,9 · lockfile version still 0.1.0 while plugin.json/package.json say 1.0.0, and version-drift.test.mjs's header claim ("the one copy that can still drift") is false — the lockfile is a third copy and it drifted in this very slice · any future `npm install` rewrites the lockfile and dirties the shipped tree; R6's final sweeps missed it · slice H review (3 lenses converged)
+- MINOR · plugins/dig/test/premium-copy.test.mjs:20-26 · JSON checks grep the whole raw file, not the description field R2 names · phrase migrating to another field (e.g. a userConfig title) passes vacuously while R2 regresses · slice H review (3 lenses)
+- MINOR · plugins/dig/test/premium-copy.test.mjs:36-42 · "first paragraph" check only requires Premium above the first `## ` heading · mutation moving Premium into intro paragraph 2 survived the suite · slice H review (2 lenses, mutation-proven)
+- MINOR · plugins/dig/test/premium-copy.test.mjs:47-52 · Step 0 regex requires a following `^## ` heading · Step 0 as the last section would fail with the misleading "must have a Step 0 section" (fail-closed) · slice H review (2 lenses)
+- MINOR · plugins/dig/test/version-drift.test.mjs:26 · semver regex rejects a legal lockstep prerelease bump (1.1.0-rc.1 in both files fails) · a legitimate rc workflow is blocked by the guard · slice H review
+- MINOR · README.md (Uninstalling) · copy imprecise both directions: uninstall-alone was observed leaving the data dir (Discovered 2026-08-16) vs full removal deleting it, and the loss includes token.json + config.json (sign-in + Client ID), not "only backup copies" · user uninstalls believing only backups go, loses the sign-in, or uninstall-alone leaves snapshots the README says are gone · slice H review (2 lenses)
+- MINOR · README.md (Updates) · `/plugin update dig@dig` form unverified — docs pin only the CLI `claude plugin update <plugin>`; nothing exercises it until AC1's dry run · a friend pasting the update line may hit an unknown command · slice H review (3 lenses)
+- MINOR · README.md (Install) · the install-scope prompt (User/Project/Local) is not mentioned; "ignore any configuration prompts" doesn't cover a friend picking Local scope, contradicting "installs at the user level, works from every folder" · slice H review
+- MINOR · docs/dig-build-plan.md:200 · plugins/dig/package.json changed outside the slice Footprint (ledgered per user, but the Footprint line was never amended) · a reviewer trusting the Footprint as the change boundary misses a changed file · slice H review (2 lenses)

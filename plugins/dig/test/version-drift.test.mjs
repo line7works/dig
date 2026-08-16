@@ -1,8 +1,9 @@
 // Version drift guard (slice A punch-list MINOR, live at every release
 // bump): plugin.json is the single source of truth — serverInfo already
-// reads it at runtime (index.mjs), so this pins the one copy that can still
-// drift, package.json. `claude plugin update` keys on plugin.json's version,
-// so a stale sibling is a real release hazard, not cosmetics.
+// reads it at runtime (index.mjs), so this pins the copies that can still
+// drift: package.json and both version fields of package-lock.json.
+// `claude plugin update` keys on plugin.json's version, so a stale sibling
+// is a real release hazard, not cosmetics.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -11,14 +12,29 @@ import { join } from "node:path";
 
 const PLUGIN_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
+function readJson(rel) {
+  return JSON.parse(readFileSync(join(PLUGIN_ROOT, rel), "utf8"));
+}
+
 function readVersion(rel) {
-  return JSON.parse(readFileSync(join(PLUGIN_ROOT, rel), "utf8")).version;
+  return readJson(rel).version;
 }
 
 test("package.json version matches plugin.json (the release source of truth)", () => {
   const plugin = readVersion(".claude-plugin/plugin.json");
   const pkg = readVersion("package.json");
   assert.equal(pkg, plugin, "bump package.json and plugin.json together");
+});
+
+test("package-lock.json versions match plugin.json (both fields)", () => {
+  const plugin = readVersion(".claude-plugin/plugin.json");
+  const lock = readJson("package-lock.json");
+  assert.equal(lock.version, plugin, "package-lock.json root version is stale — bump it with plugin.json");
+  assert.equal(
+    lock.packages?.[""]?.version,
+    plugin,
+    'package-lock.json packages[""].version is stale — bump it with plugin.json',
+  );
 });
 
 test("plugin.json version is a plain semver triple", () => {
