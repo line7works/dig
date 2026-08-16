@@ -504,3 +504,9 @@ No fix-introduced defects found; suite 146/146
 - MAJOR · docs/dig-build-plan.md (Deviations · Slice G, AC1 entry) · (AC1 fresh-eyes run unexercised-in-full, builder call) · not fixed — awaiting Tony's ruling (accept the live-verified + fresh-agent walkthrough, waive, or run it himself)
 - MAJOR · docs/dig-build-plan.md (Build assumptions · Slice G, redirect-copy entry) · (R5's "six §12 messages" met as five-at-triggers + paraphrased redirect hint, builder call) · not fixed — awaiting Tony's ruling
 No fix-introduced defects; suite 164/164
+
+### 2026-08-16 · Slice G post-recheck rulings
+- Tony ruled (AC1): he will run the from-scratch fresh-eyes setup himself on a brand-new dummy Spotify account (new email, new person simulation) — the AC1 MAJOR stays OPEN until that run; not waived · per user
+- Tony ruled (self-add question): the 2026-08-15 "0/5 users added yet calls work" observation is NOT evidence the trap is gone — he had already added himself before this work (the dashboard's 0/5 display vs his recollection is unreconciled; check during the new-account test). User Management step stays loud. The AC1 dummy-account run doubles as the live test of whether self-add is still required · per user
+
+WAIVED (per user) · 2026-08-16 · MAJOR · docs/dig-build-plan.md (Build assumptions · Slice G, redirect-copy entry) · R5's "six §12 messages" met as five-at-triggers + paraphrased redirect hint in skill text and dig_doctor — Tony blessed skill/doctor as the copy's home (no runtime trigger exists)
