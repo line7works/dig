@@ -200,7 +200,7 @@ Acceptance criteria:
 Footprint: `README.md`, `LICENSE`, `.claude-plugin/marketplace.json`, `plugins/dig/.claude-plugin/plugin.json`, `plugins/dig/test/`.
 Not in this slice: creating the GitHub repo, pushing, or any publish action — gated on Tony's explicit word.
 Depends on: Slice G
-Status: signed off with conditions
+Status: signed off
 
 ## Open questions
 - License for the public repo (MIT is the conventional default for this kind of tool; Tony decides by slice H). — RESOLVED 2026-08-16: Tony chose MIT.
@@ -623,3 +623,8 @@ CLOSED (per user) · 2026-08-16 · docs/dig-build-plan.md (Deviations · Slice G
 - MINOR · README.md (Updates) · `/plugin update dig@dig` form unverified — docs pin only the CLI `claude plugin update <plugin>`; nothing exercises it until AC1's dry run · a friend pasting the update line may hit an unknown command · slice H review (3 lenses)
 - MINOR · README.md (Install) · the install-scope prompt (User/Project/Local) is not mentioned; "ignore any configuration prompts" doesn't cover a friend picking Local scope, contradicting "installs at the user level, works from every folder" · slice H review
 - MINOR · docs/dig-build-plan.md:200 · plugins/dig/package.json changed outside the slice Footprint (ledgered per user, but the Footprint line was never amended) · a reviewer trusting the Footprint as the change boundary misses a changed file · slice H review (2 lenses)
+
+### 2026-08-16 — recheck: Slice H
+- MAJOR · docs/dig-build-plan.md:288 · (the slice-H ledger edit deleted the `## Deviations` H2 heading) · fixed — verified: top-level order now Build assumptions:208 → Deviations:298 → Discovered:336 → Punch list:387, all per-slice deviation blocks (A through the 2026-08-16 H entry) inside Deviations; `git show 8084ba6` confirms the repair was a pure insertion, no ledger content lost, port-8888 and AC1-unexercised entries each present exactly once
+- MAJOR · plugins/dig/package-lock.json:3,9 · (lockfile version still 0.1.0 while plugin.json/package.json say 1.0.0; drift guard's coverage claim false) · fixed — executed: both lockfile fields now 1.0.0; mutation on a scratch copy of either field to 0.9.9 fails version-drift.test.mjs (both assertions exercised, fail-closed on a missing packages[""]); header comment corrected; full suite 196/196; real tree clean after runs
+No fix-introduced defects found; suite 196/196
