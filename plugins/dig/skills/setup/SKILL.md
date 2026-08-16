@@ -31,7 +31,9 @@ app creation only to fail at the end.
 1. Go to **https://developer.spotify.com/dashboard** and log in with the
    Spotify account whose playlists Dig should manage.
 2. Click the **Create app** button (top right of the Dashboard page).
-3. App name and description can be anything — "Dig" is fine.
+3. App name and description can be anything — "Dig" is fine. The form may
+   also ask which API the app uses (choose **Web API**) and to accept
+   Spotify's Developer Terms — both are part of the same form.
 
 ## Step 2 — Paste the redirect address, exactly
 
@@ -62,8 +64,9 @@ yourself by running:
 claude plugin install dig@dig --config spotify_client_id=<the pasted ID>
 ```
 
-Do not send the user to `/plugin` menus or settings screens. After the
-command succeeds, tell them: **start a new chat** (config changes only reach
+(The plugin is already installed — this command just stores the config
+value.) Do not send the user to `/plugin` menus or settings screens. After
+the command succeeds, tell them: **start a new chat** (config changes only reach
 Dig's tools in a fresh chat), then come back to these steps there.
 
 ## Step 4 — Add yourself under User Management (LOUD, and slow)
@@ -85,12 +88,14 @@ up to 15 minutes to take effect. Say that out loud — the wait is real, and
 ## Step 5 — Sign in through the browser
 
 Call `dig_connect`. A normal Spotify approval screen opens in their browser;
-they approve it with the same account. Then call `dig_status` to confirm who
-connected — if it names the wrong account, have them sign out of Spotify in
-the browser and run `dig_connect` again.
+they approve it with the same account. If no browser opens, the
+`dig_connect` result includes the address to open by hand. Then call
+`dig_status` to confirm who connected — if it names the wrong account, have
+them sign out of Spotify in the browser and run `dig_connect` again.
 
 `dig_connect` also serves a local reference page with this whole picture and
-the exact redirect address to copy — point them at it for the visual.
+the exact redirect address to copy — its address is in the `dig_connect`
+result; point them at it for the visual.
 
 Finish with a real edit: list their playlists, or create a test playlist,
 so they see it working.
@@ -99,7 +104,10 @@ so they see it working.
 
 Run `dig_doctor`. It checks each layer in order and every failure comes back
 with instructions. The most common first-run failure is a 403 meaning the
-Step 4 self-add has not taken effect yet — wait the 15 minutes.
+Step 4 self-add has not taken effect yet — wait the 15 minutes. If sign-in
+itself fails strangely, double-check that the configured value is the one
+labeled **Client ID** — a pasted Client Secret has the same shape and no
+check can tell them apart.
 
 ## Optional: enabling playlist deletion
 
@@ -113,6 +121,6 @@ exactly that, then run:
 claude plugin install dig@dig --config dig_enable_unfollow=true
 ```
 
-(keeping their existing `spotify_client_id` config: pass both `--config`
-flags if the install asks again). Then **start a new chat** — the tool
-appears there. To turn it off, set `dig_enable_unfollow` to anything else.
+(this merges with the existing config — the stored Client ID is kept). Then
+**start a new chat** — the tool appears there. To turn it off, run the same
+command with `dig_enable_unfollow=false`.

@@ -156,7 +156,7 @@ Acceptance criteria:
 Footprint: `plugins/dig/skills/`, `plugins/dig/server/` (doctor, error copy), reference page content, `plugins/dig/test/`.
 Not in this slice: README/marketplace copy (slice H).
 Depends on: Slices B–F (documents and doctors what exists)
-Status: not started
+Status: built
 
 ## Slice H — Ship preparation
 Goal: Everything a public day-one repo needs, ready for Tony's publish word — which this slice does NOT include.
@@ -242,6 +242,14 @@ Status: not started
 - Snapshot files: `snapshots/<ISO-timestamp>-<name-slug>-<playlistId>.json` in the data dir, 0600 atomic via the slice-B writer; .gitignore's existing `snapshots/` pattern covers the repo-side risk · builder call
 - Server instructions: three existing lines tightened (and the now-false "writes are additive only" claim removed) to fit the two new destructive-rules lines inside the 2 KB budget · builder call
 
+### 2026-08-15 · Slice G
+- dig_doctor is an ordered checklist that stops after a failed gate (later checks would only echo the same cause); a completed diagnosis returns isError:false — the failures ride inside the checklist with their mapped copy · builder call
+- The redirect-rejected §12 copy has no runtime trigger (Spotify's dashboard rejects the URI, Dig never sees it) — carried as setup-skill step-2 text plus a doctor hint on the no-token branch showing the exact URI, since a mismatch's only Dig-side symptom is a sign-in that never completes · builder call
+- R6 field key is `dig_enable_unfollow` (type string, value "true") so BOTH paths hit the env names slice F already reads: explicit `.mcp.json` substitution to DIG_ENABLE_UNFOLLOW, and the CLAUDE_PLUGIN_OPTION_DIG_ENABLE_UNFOLLOW auto-export — zero changes to the opt-in's read site semantics · builder call
+- destructive-tools' opt-in env read hardened: a blank or unsubstituted-placeholder primary env var no longer masks the auto-export fallback (the slice-A config lesson; in-scope as R6's "sets the slice-F opt-in") · builder call
+- Server instructions untouched (2033/2048 bytes): dig_doctor is discoverable from its own description and the skills; nothing G ships needs an instructions line · builder call
+- Digging skill also instructs reading the playlist before proposing and names the 20-proposal bound — restatements of the live tool contracts, not new rules · builder call
+
 ## Deviations
 
 ### 2026-08-15 · Slice A
@@ -267,6 +275,11 @@ Status: not started
 
 ### 2026-08-15 · Slice F
 - none
+
+### 2026-08-15 · Slice G
+- Default tool count is now 17 (18 with unfollow enabled) vs the constraint's 12–16 target — R4 mandates dig_doctor and every other tool is spec-mandated; still under research §6's never-more-than-20 hard line · builder call
+- AC1 performed as: (a) live read-only verification of every dashboard URL and button name reachable without clicking (Dashboard, Create app, Basic Information, User Management/Add user), and (b) a fresh-context agent walkthrough of the skill text with its improvisation gaps folded back in — a true from-scratch human run still needs Tony at the browser (this session cannot click in browsers or enter credentials); AC1 reported unexercised-in-full · builder call
+- Below-the-fold Basic Information content (Redirect URIs box, Add/Save buttons) carried from the slice-B same-day live record rather than re-verified — read-tier browsing cannot scroll; everything above the fold was re-verified live today · builder call
 
 ## Discovered
 
@@ -295,6 +308,12 @@ Status: not started
 - R7 answered: the track-relinking silent failure (200-yet-nothing-removed; workaround field removed Feb 2026) did NOT reproduce — two live DELETEs against the throwaway playlist both removed the planned track and verified by re-read. The apply path still reports it honestly (ambiguous/partial + never-blind-retry + snapshot pointer) if it ever appears in the wild
 - NEW live failure mode: immediately after a DELETE, `GET /playlists/{id}?fields=snapshot_id` can still serve the PRE-delete snapshot_id (read-after-write staleness). The first live apply reported "ambiguous" on a removal that HAD landed, because its verify re-read went through the snapshot-keyed find-index cache, which the stale metadata validated. Fixed in-slice: destructive verifies page the rows directly (never the cache) and drop the playlist's cache entry; regression test added. Any future consumer that verifies a write through FindIndex is exposed to the same staleness (slice E's write verifies read windows directly and are unaffected)
 - AC1 restored the throwaway playlist to its 3-track state; the run's snapshot files remain in the data dir as real restore candidates
+
+### 2026-08-15 · Slice G live dashboard verification
+- The dashboard restructured since the research snapshot: there is NO "Settings" page anymore. An app's page is **Basic Information** (URL `/dashboard/<client-id>`) with two tabs, **Basic Information** and **User Management** (`/dashboard/<client-id>/users`). Client ID sits at the top of Basic Information with a copy button and a "View client secret" link beneath; "Refresh Token Lifetime 180 days" is now displayed. User Management fields are **Full Name** / **Email** with an **Add user** button (research §3 said "Add new user") and a "maximum of 5 users" note. Skill + reference page written to this
+- The dig test app shows **0/5 users added** under User Management, yet every live call all day succeeded — the owner self-add requirement (research §3's allowlist trap) appears NOT to be enforced for the app owner, or owners are implicitly allowed. The skill keeps step 4 loud per R1/PRD §9 (harmless if unnecessary, and the 403 mapping still covers it); worth a Tony ruling before slice H copy leans on the trap being real
+- `claude plugin install dig@dig --config X=Y` against an installed plugin MERGES with stored options (spotify_client_id survived the dig_enable_unfollow flips) — enable/recovery flows can pass a single flag
+- dig_doctor's first live run hit a stale token.json.lock left by a killed test harness; the 30s stale-break recovered on the next run exactly as designed ("broke stale lock" logged), and the doctor surfaced the interim failure honestly
 
 ## Punch list
 
