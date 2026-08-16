@@ -137,7 +137,7 @@ Acceptance criteria:
 Footprint: `plugins/dig/server/`, `plugins/dig/test/`.
 Not in this slice: nothing adjacent — this is the last tool slice.
 Depends on: Slice C (E recommended first so the result vocabulary exists)
-Status: rejected
+Status: signed off
 
 ## Slice G — Onboarding skills, digging skill, doctor
 Goal: The ten minutes before Dig works, made survivable by a non-developer, plus the taste layer that makes digging good.
@@ -442,3 +442,13 @@ No fix-introduced defects found; suite 113/113
 - MINOR · plugins/dig/server/destructive-tools.mjs:63 · listSnapshots routes through requireSnapshotsDir, so the read-only listing errors with destructive-write copy when CLAUDE_PLUGIN_DATA is unset · slice F review
 - MINOR · plugins/dig/server/destructive-tools.mjs:186 · isConcurrentEditError duplicated verbatim from write-tools.mjs:86 · slice F review
 - MINOR · plugins/dig/server/destructive-tools.mjs:434 · dedupe re-add verifies by original URI, so track-relinking could mark a landed re-add partial and the note nudges toward a manual re-add that would duplicate · slice F review
+
+### 2026-08-15 — recheck: Slice F
+- BLOCKER · plugins/dig/server/destructive-tools.mjs:151 · (plan tokens not bound to operation kind — cross-tool reuse turns one approval into a different destructive act) · fixed — take(token, clientId, kinds) rejects kind mismatches (now destructive-tools.mjs:157-169); consumers pass ["removal","dedupe"] / ["restore"] / ["unfollow"]; executed: a removal token passed as a restore was refused with "minted for a different operation"
+- MAJOR · plugins/dig/server/destructive-tools.mjs:374 · (apply's summary never compared to plan.summary) · fixed — mismatch throws before any write (now :402-409); the approval sentence is bound to the plan verbatim
+- MAJOR · plugins/dig/server/destructive-tools.mjs:426 · (verify-failure after a landed write escapes as a bare error, losing result + snapshot pointer; dedupe left no partial report) · fixed — removal verify wrapped (now :454-467, dedupe-aware partial), re-add failure returns partial with recovery options (:481-488), post-re-add and restore verifies return accepted with pointers (:489-500, :595-605); executed: 429 on the post-DELETE re-read yields result accepted with the snapshot name
+- MAJOR · plugins/dig/server/index.mjs:36 · (three separate FindIndex caches; verify cleared only the destructive one) · fixed — one sharedIndex built at index.mjs:39 and injected into all three factories (:44-46); verifyRead's invalidation now reaches the cache read tools serve from
+- MAJOR · plugins/dig/server/destructive-tools.mjs:682 · (unfollow promised "restorable into a new playlist" with no such path) · fixed — dig_restore_snapshot accepts into_playlist_id (retarget at :628, token/digest bound to the target :633-644) and the unfollow copy names the real path (:719) plus Spotify's 90-day recovery
+- MAJOR · plugins/dig/server/destructive-tools.mjs:312 · (all-duplicates dedupe passes the kept check and empties the playlist transiently/permanently) · fixed — never-empty guard now measures playable rows before re-add (:329-335) with a dedupe-specific refusal; executed: [A,A,B,B] mode:duplicates refused at plan time, no token minted
+- MAJOR · plugins/dig/server/destructive-tools.mjs:75 · (same-millisecond snapshot names rename-overwrite the earlier rollback point) · fixed — random suffix appended (now :78); executed: back-to-back snapshots of one playlist produced distinct files
+No fix-introduced defects found; suite 146/146
