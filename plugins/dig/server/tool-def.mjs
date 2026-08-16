@@ -10,6 +10,9 @@ const ACCESS_CLASSES = {
   local: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   // Starts the sign-in flow: writes local token state, talks to Spotify.
   connect: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  // Additive writes: create/add/rename/reorder — never removal, so not
+  // destructive, but repeating one is not idempotent (a re-add duplicates).
+  write: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
 };
 
 export function defineTool({ name, title, description, inputSchema, access }) {

@@ -8,6 +8,7 @@ import { log } from "./log.mjs";
 import { STATUS_TOOL, digStatus } from "./status.mjs";
 import { CONNECT_TOOL, digConnect } from "./connect.mjs";
 import { createReadTools } from "./read-tools.mjs";
+import { createWriteTools } from "./write-tools.mjs";
 import { SERVER_INSTRUCTIONS } from "./instructions.mjs";
 import { checkClientId } from "./config.mjs";
 
@@ -32,6 +33,7 @@ const REGISTRY = [
   { def: STATUS_TOOL, handler: async () => ({ text: digStatus(), isError: false }) },
   { def: CONNECT_TOOL, handler: () => digConnect() },
   ...createReadTools(),
+  ...createWriteTools(),
 ];
 const HANDLERS = new Map(REGISTRY.map((t) => [t.def.name, t.handler]));
 const TOOLS = REGISTRY.map((t) => t.def);
@@ -169,5 +171,8 @@ process.stdin.on("end", () => {
   // client half-closed; otherwise it is silently lost.
   const line = buf.trim();
   if (line) dispatch(line);
-  process.exit(0);
+  // Exit only after stdout has drained: a synchronous exit truncates any
+  // reply still buffered in the pipe (large frames like tools/list). The
+  // empty write's callback fires after everything queued before it flushes.
+  process.stdout.write("", () => process.exit(0));
 });

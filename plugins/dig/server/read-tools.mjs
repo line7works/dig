@@ -27,9 +27,10 @@ const detailProp = {
 };
 
 // Validation failure -> isError tool result (never a protocol error).
-class ValidationError extends Error {}
+// Shared with the write tools (slice E) so validation behaves identically.
+export class ValidationError extends Error {}
 
-function requireString(args, key, what) {
+export function requireString(args, key, what) {
   const v = args?.[key];
   if (typeof v !== "string" || v.trim() === "") {
     throw new ValidationError(`**Missing ${what}.** Pass \`${key}\` — get one from dig_list_playlists or dig_search_catalog.`);
@@ -320,12 +321,17 @@ export function createReadTools({ client = spotify, index } = {}) {
   ];
 
   // Wrap every handler once: known failures become isError instructions.
+  return wrapTools(tools);
+}
+
+// Shared by read and write tools: known failures become isError instructions,
+// and every tool call gets ONE wait budget so the R4 60s cap spans every
+// request the invocation makes, not each request separately.
+export function wrapTools(tools) {
   return tools.map(({ def, handler }) => ({
     def,
-    handler: async (args, budget) => {
+    handler: async (args) => {
       try {
-        // One wait budget per tool call: the R4 60s cap spans every request
-        // this invocation makes, not each request separately.
         return { text: await handler(args, waitBudget()), isError: false };
       } catch (err) {
         if (

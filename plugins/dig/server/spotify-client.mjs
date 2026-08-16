@@ -40,7 +40,7 @@ export class SpotifyClient {
     return result;
   }
 
-  async #execute(path, { method = "GET", query, budget } = {}) {
+  async #execute(path, { method = "GET", query, body, budget } = {}) {
     const id = checkClientId();
     if (id.state !== "ok") throw new SpotifyApiError(id.message, { endpoint: path });
 
@@ -55,7 +55,11 @@ export class SpotifyClient {
       const token = await this.store.getAccessToken(id.clientId);
       const res = await this.fetch(url, {
         method,
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        },
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
         signal: AbortSignal.timeout(30_000),
       });
       if (res.status === 401 && !retried401) {
@@ -86,6 +90,13 @@ export class SpotifyClient {
         });
       }
       if (res.status === 204) return null;
+      // Some write endpoints (PUT /playlists/{id}) answer 200 with an empty
+      // body; res.json() would throw on it. Read text when the response
+      // supports it (test doubles may only implement json()).
+      if (typeof res.text === "function") {
+        const text = await res.text();
+        return text ? JSON.parse(text) : null;
+      }
       return res.json();
     }
   }
