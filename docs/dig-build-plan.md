@@ -158,6 +158,32 @@ Not in this slice: README/marketplace copy (slice H).
 Depends on: Slices B–F (documents and doctors what exists)
 Status: signed off with conditions
 
+## Slice G2 — Desktop-proof configuration
+Goal: Dig configures itself from chat on the desktop app, where plugin userConfig never arrives — the Client ID (and the unfollow opt-in) persist in Dig's own data directory, effective without a new chat.
+Requirements:
+- R1: Config file fallback: the server resolves the Client ID as env (existing usable() rules) first, then a persisted `config.json` in CLAUDE_PLUGIN_DATA (0600, atomic, via the existing writeFileAtomic0600). Env wins when usable. Same resolution for the unfollow opt-in (env names first, then the file).
+- R2: New tool `dig_set_client_id`: validates the 32-char shape (reuse checkClientId's validation and BAD_CLIENT_ID_MESSAGE), persists to the config file, takes effect IMMEDIATELY in the same session (no restart, no new chat), and its success text names the next step (dig_connect). Unconfigured state must remain non-fatal exactly as before.
+- R3: The unfollow opt-in becomes settable without userConfig: `dig_set_client_id` stays single-purpose; a separate `dig_enable_playlist_deletion` tool (enable/disable argument) writes the flag to the config file, carries `_meta["anthropic/requiresUserInteraction"]: true` and the destructive access class, and its text repeats the deletion warning. Tool registration for dig_unfollow_playlist re-evaluates per tools/list call OR the enable text says to start a new chat — builder verifies which is achievable and records it.
+- R4: dig_status and dig_doctor report which config source is active (env vs Dig's config file vs none) so support conversations can tell them apart.
+- R5: Copy + skill fixes riding this slice (all per Tony's 2026-08-16 rulings, in the ledger):
+  (a) UNCONFIGURED_MESSAGE: drop the /plugin path; instruct paste-the-Client-ID-in-chat (dig_set_client_id) with the setup skill as the fallback.
+  (b) Setup skill step 0: DEMAND the Premium answer before proceeding (no "assuming yes").
+  (c) Setup skill step 1-2: instruction order must match the live Create app form: App name → App description → Website optional → Redirect URIs (paste + click Add) → Web API checkbox → tick the Developer Terms agreement checkbox → Save at the form bottom.
+  (d) Setup skill step 4: "don't navigate away — on the same page, click the User Management tab (next to Basic Information)".
+  (e) Setup skill config step: replace the `claude plugin install --config` flow with dig_set_client_id in chat; "start a new chat" remains ONLY for the post-install step.
+  (f) New opening note (privacy/trust, per user): everything — Spotify app, Client ID, sign-in — stays on the user's machine, talks only to Spotify, nothing stored by or visible to Line 7; warm framing ("something we built for ourselves and like sharing"). Reference page gets the same note.
+  (g) Setup skill/README seam: the attached folder does not matter (user-level plugin, writes nothing into the folder) — note where the skill covers pre-install context; the full install story is still slice H's.
+- R6: userConfig stays declared in plugin.json (terminal installs still work); the file fallback must not fight it — env-wins ordering is the contract, and a mismatch between the two sources is reported by dig_status/doctor, not silently resolved.
+Acceptance criteria:
+- AC1: Unit tests: env-wins precedence; file fallback used when env blank/placeholder; dig_set_client_id validates shape, persists 0600, and the SAME server process serves authed-path config immediately after; unfollow flag file fallback + both env names still honored; dig_enable_playlist_deletion carries requiresUserInteraction meta and destructive annotations — verify: new tests at plugins/dig/test/config-file.test.mjs (plus extensions to unfollow-config.test.mjs).
+- AC2: Live on THIS Mac in the DESKTOP app (Tony): paste Client ID in chat → dig_set_client_id → dig_connect signs in and a live call succeeds, all in one chat — verify: manual (this is the resumed fresh-eyes run's unblocking step).
+- AC3: Full suite green including stdout-purity, stderr-only, no-localhost, instructions budget — verify: npm test.
+- AC4: dig_status/dig_doctor name the active config source in all three states (env, file, none) — verify: unit tests + one manual read.
+Footprint: plugins/dig/server/ (config.mjs, new config-file module or extension, status.mjs, doctor.mjs, destructive-tools.mjs wiring, connect path untouched), plugins/dig/skills/setup/SKILL.md, reference page in callback.mjs, plugins/dig/test/.
+Not in this slice: README/marketplace copy (slice H); any Spotify API behavior change; the digging skill.
+Depends on: Slice G (its conditions stand — this slice does not need G's open AC1, it unblocks it)
+Status: not started
+
 ## Slice H — Ship preparation
 Goal: Everything a public day-one repo needs, ready for Tony's publish word — which this slice does NOT include.
 Requirements:
