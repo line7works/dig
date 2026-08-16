@@ -200,10 +200,10 @@ Acceptance criteria:
 Footprint: `README.md`, `LICENSE`, `.claude-plugin/marketplace.json`, `plugins/dig/.claude-plugin/plugin.json`, `plugins/dig/test/`.
 Not in this slice: creating the GitHub repo, pushing, or any publish action — gated on Tony's explicit word.
 Depends on: Slice G
-Status: not started
+Status: built
 
 ## Open questions
-- License for the public repo (MIT is the conventional default for this kind of tool; Tony decides by slice H).
+- License for the public repo (MIT is the conventional default for this kind of tool; Tony decides by slice H). — RESOLVED 2026-08-16: Tony chose MIT.
 
 ## Build assumptions
 
@@ -285,7 +285,15 @@ Status: not started
 - R6 mismatch reporting: dig_status/dig_doctor flag env-vs-file Client ID divergence ("plugin settings win") and dig_set_client_id's success text warns when a different env value stays in charge; the values are never reconciled automatically · builder call
 - Proceeded over slice G's open AC1 MAJOR on the handoff's explicit carve-out (this slice unblocks that run) · per user
 
-## Deviations
+### 2026-08-16 · Slice H
+- License is MIT, copyright "Line 7" (Tony's ruling in the slice-H discussion, this session) · per user
+- The eight 2026-08-16 ledger findings folded into README copy as requirements: friend-prompt front door (computer app / Local / Open folder-any-folder / ignore installer config prompts), chat-first config, desktop-vs-terminal separate setups, uninstall-deletes-snapshots warning, privacy/trust note, User Management never stated optional · per user
+- Version-drift guard added (slice A MINOR index.mjs:10): serverInfo already single-sources from plugin.json since slice B's fold, so the guard is a test pinning package.json to plugin.json (test/version-drift.test.mjs); package.json was in fact stale at 0.1.0 and is bumped to 1.0.0 with plugin.json · per user
+- R2's "verify the first four here" read as: README, marketplace.json, plugin.json, setup-skill step 0 — AC2's test greps those four; the runtime error (fifth place) landed in G and stays covered by error-map tests · builder call
+- README update instructions written as `/plugin marketplace update dig` then `/plugin update dig@dig` + start a new chat — R5 names no exact commands; these mirror the PRD §8 install-line format and the marketplace/plugin names · builder call
+- R3 metadata verified as already final: marketplace name `dig` + plugin name `dig` make `/plugin install dig@dig` work as printed; `line7works/dig` is the GitHub repo name, which only exists at publish — no metadata change needed beyond the version · builder call
+- README avoids the no-localhost forbidden word by construction (it is scanned by the tree grep, unlike docs/) · builder call
+- AC2's positional check strengthened beyond presence: README test asserts Premium appears before both the Install section and the first heading (the spec's "first paragraph, above install instructions") · builder call
 
 ### 2026-08-15 · Slice A
 - none
@@ -319,6 +327,9 @@ Status: not started
 ### 2026-08-16 · Slice G2
 - Default tool surface now 19 (20 with unfollow enabled) vs the constraint's 12–16 target — both new tools are spec-mandated (R2, R3); still under research §6's never-more-than-20 hard line, but at it when unfollow is on · builder call
 - destructive.test.mjs's slice-F AC3 factory test updated to the new contract (entry registered, `enabled()` false by default); absence from the real tool list is still proven at the server boundary in unfollow-config.test.mjs · builder call
+
+### 2026-08-16 · Slice H
+- AC1 (timed clean-machine dry run) not exercised by the build: Tony ruled in the slice-H discussion that he performs it himself after H lands, with findings folded back as edits before signoff — reported unexercised, not done · per user
 
 ## Discovered
 
