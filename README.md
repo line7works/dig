@@ -71,9 +71,10 @@ updates are manual: in a chat, run `/plugin marketplace update dig` and then
 
 ## Uninstalling
 
-Heads up: **uninstalling Dig deletes your local snapshots** — the backups
-Dig saves before any destructive change. Your actual Spotify playlists are
-untouched; only Dig's local backup copies are lost.
+Heads up: **uninstalling Dig can delete everything it stores locally** —
+your snapshots (the backups Dig saves before any destructive change), your
+Spotify sign-in, and your saved Client ID. Your actual Spotify playlists
+are untouched, but a reinstall means setting up again.
 
 ## License
 
