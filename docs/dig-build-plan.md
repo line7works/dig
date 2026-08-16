@@ -182,7 +182,7 @@ Acceptance criteria:
 Footprint: plugins/dig/server/ (config.mjs, new config-file module or extension, status.mjs, doctor.mjs, destructive-tools.mjs wiring, connect path untouched), plugins/dig/skills/setup/SKILL.md, reference page in callback.mjs, plugins/dig/test/.
 Not in this slice: README/marketplace copy (slice H); any Spotify API behavior change; the digging skill.
 Depends on: Slice G (its conditions stand — this slice does not need G's open AC1, it unblocks it)
-Status: not started
+Status: built
 
 ## Slice H — Ship preparation
 Goal: Everything a public day-one repo needs, ready for Tony's publish word — which this slice does NOT include.
@@ -276,6 +276,15 @@ Status: not started
 - Server instructions untouched (2033/2048 bytes): dig_doctor is discoverable from its own description and the skills; nothing G ships needs an instructions line · builder call
 - Digging skill also instructs reading the playlist before proposing and names the 20-proposal bound — restatements of the live tool contracts, not new rules · builder call
 
+### 2026-08-16 · Slice G2
+- R3's "re-evaluates per tools/list OR new-chat text" resolved as BOTH achievable and shipped: the unfollow entry registers unconditionally with an `enabled()` predicate re-evaluated on every tools/list AND tools/call (a disabled tool answers -32602 like an unknown one), the server declares `capabilities.tools.listChanged` and dig_enable_playlist_deletion emits notifications/tools/list_changed, and the enable text still carries the new-chat fallback for hosts that don't refresh · builder call
+- Config file is `config.json` in CLAUDE_PLUGIN_DATA holding string values ({ spotify_client_id, dig_enable_unfollow }), merge-written via writeFileAtomic0600; a corrupt/unparseable file reads as absent (never fatal), permissions self-heal on read like token.json · builder call
+- Unfollow-flag resolution centralized into config.mjs resolveUnfollowFlag() (env names under the shared usable() rules, then the file) and destructive-tools consumes it — this also removes the slice-G MINOR's trim-order asymmetry (destructive-tools.mjs:212) since there is now one reader · builder call
+- dig_set_client_id trims the pasted value before validating (paste-with-whitespace is the common chat case, same leniency checkClientId already applies) · builder call
+- New tool-def access class `configure` (readOnly false, destructive false, idempotent true, openWorld false) for dig_set_client_id — no existing class describes a local, non-destructive settings write · builder call
+- R6 mismatch reporting: dig_status/dig_doctor flag env-vs-file Client ID divergence ("plugin settings win") and dig_set_client_id's success text warns when a different env value stays in charge; the values are never reconciled automatically · builder call
+- Proceeded over slice G's open AC1 MAJOR on the handoff's explicit carve-out (this slice unblocks that run) · per user
+
 ## Deviations
 
 ### 2026-08-15 · Slice A
@@ -306,6 +315,10 @@ Status: not started
 - Default tool count is now 17 (18 with unfollow enabled) vs the constraint's 12–16 target — R4 mandates dig_doctor and every other tool is spec-mandated; still under research §6's never-more-than-20 hard line · builder call
 - AC1 performed as: (a) live read-only verification of every dashboard URL and button name reachable without clicking (Dashboard, Create app, Basic Information, User Management/Add user), and (b) a fresh-context agent walkthrough of the skill text with its improvisation gaps folded back in — a true from-scratch human run still needs Tony at the browser (this session cannot click in browsers or enter credentials); AC1 reported unexercised-in-full · builder call
 - Below-the-fold Basic Information content (Redirect URIs box, Add/Save buttons) carried from the slice-B same-day live record rather than re-verified — read-tier browsing cannot scroll; everything above the fold was re-verified live today · builder call
+
+### 2026-08-16 · Slice G2
+- Default tool surface now 19 (20 with unfollow enabled) vs the constraint's 12–16 target — both new tools are spec-mandated (R2, R3); still under research §6's never-more-than-20 hard line, but at it when unfollow is on · builder call
+- destructive.test.mjs's slice-F AC3 factory test updated to the new contract (entry registered, `enabled()` false by default); absence from the real tool list is still proven at the server boundary in unfollow-config.test.mjs · builder call
 
 ## Discovered
 
@@ -349,6 +362,9 @@ Status: not started
 - The dig test app shows **0/5 users added** under User Management, yet every live call all day succeeded — the owner self-add requirement (research §3's allowlist trap) appears NOT to be enforced for the app owner, or owners are implicitly allowed. The skill keeps step 4 loud per R1/PRD §9 (harmless if unnecessary, and the 403 mapping still covers it); worth a Tony ruling before slice H copy leans on the trap being real
 - `claude plugin install dig@dig --config X=Y` against an installed plugin MERGES with stored options (spotify_client_id survived the dig_enable_unfollow flips) — enable/recovery flows can pass a single flag
 - dig_doctor's first live run hit a stale token.json.lock left by a killed test harness; the 30s stale-break recovered on the next run exactly as designed ("broke stale lock" logged), and the doctor surfaced the interim failure honestly
+
+### 2026-08-16 · Slice G2
+- wrapTools (read-tools.mjs:330) rebuilt each entry as bare {def, handler}, silently dropping any extra key — it ate the unfollow entry's `enabled` gate until fixed to spread the rest through; any future per-entry metadata would have vanished the same way
 
 ## Punch list
 
