@@ -495,3 +495,12 @@ No fix-introduced defects found; suite 146/146
 - MINOR · plugins/dig/server/index.mjs:44 · default tool surface now 17 (18 enabled) vs the constraint's 12–16 target · constraint drift, disclosed · slice G review (2 lenses)
 - MINOR · plugins/dig/skills/digging/SKILL.md · "put it in the proposal's `version` field or title" vs write-tools schema's "title, without version tags" · following the "or title" branch fights the schema's design · slice G review
 - MINOR · plugins/dig/test/doctor.test.mjs:14 · readToken always injected (default-deps wiring unproven); probe endpoint/budget unasserted; isError unasserted on several paths · narrow mutants survive · slice G review
+
+### 2026-08-15 — recheck: Slice G
+- MAJOR · plugins/dig/server/config.mjs:14 · (BAD_CLIENT_ID_MESSAGE directs "click Settings" — page no longer exists) · fixed — copy now names the Basic Information page + copy button; grep over server/ and skills/ finds no remaining Settings instruction in served copy
+- MAJOR · plugins/dig/server/error-map.mjs:10 · (ALLOWLIST_403_MESSAGE step 2 says "Click Settings, then the User Management tab") · fixed — copy now: open the app, User Management tab (next to Basic Information), name + Spotify-account email, click Add user; matches the live-dashboard record
+- MAJOR · plugins/dig/test/doctor.test.mjs:65-80 · (probe-failure tests can't tell which branch fired; branch-deleting mutant passed 11/11) · fixed — mutant re-executed on a /tmp copy: 3 of 11 now fail; branch-discriminating asserts landed
+- MAJOR · plugins/dig/test/unfollow-config.test.mjs:49 · (placeholder-must-not-mask-fallback untested; guard-dropping mutant passed 6/6) · fixed — mutant re-executed on a /tmp copy: 1 of 7 now fails; combined placeholder+fallback case landed
+- MAJOR · docs/dig-build-plan.md (Deviations · Slice G, AC1 entry) · (AC1 fresh-eyes run unexercised-in-full, builder call) · not fixed — awaiting Tony's ruling (accept the live-verified + fresh-agent walkthrough, waive, or run it himself)
+- MAJOR · docs/dig-build-plan.md (Build assumptions · Slice G, redirect-copy entry) · (R5's "six §12 messages" met as five-at-triggers + paraphrased redirect hint, builder call) · not fixed — awaiting Tony's ruling
+No fix-introduced defects; suite 164/164
