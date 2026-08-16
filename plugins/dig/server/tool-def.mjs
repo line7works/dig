@@ -13,9 +13,13 @@ const ACCESS_CLASSES = {
   // Additive writes: create/add/rename/reorder — never removal, so not
   // destructive, but repeating one is not idempotent (a re-add duplicates).
   write: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  // Destructive writes (slice F): removal, restore-over, unfollow. These may
+  // also carry requiresUserInteraction via `meta` so the host prompts even
+  // under bypass-permissions modes (research §6).
+  destructive: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
 };
 
-export function defineTool({ name, title, description, inputSchema, access }) {
+export function defineTool({ name, title, description, inputSchema, access, meta }) {
   const hints = ACCESS_CLASSES[access];
   if (!hints) throw new Error(`unknown tool access class: ${access}`);
   return {
@@ -23,5 +27,6 @@ export function defineTool({ name, title, description, inputSchema, access }) {
     description,
     inputSchema,
     annotations: { title, ...hints },
+    ...(meta ? { _meta: meta } : {}),
   };
 }

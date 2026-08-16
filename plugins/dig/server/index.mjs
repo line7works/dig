@@ -9,6 +9,7 @@ import { STATUS_TOOL, digStatus } from "./status.mjs";
 import { CONNECT_TOOL, digConnect } from "./connect.mjs";
 import { createReadTools } from "./read-tools.mjs";
 import { createWriteTools } from "./write-tools.mjs";
+import { createDestructiveTools } from "./destructive-tools.mjs";
 import { SERVER_INSTRUCTIONS } from "./instructions.mjs";
 import { checkClientId } from "./config.mjs";
 
@@ -34,6 +35,7 @@ const REGISTRY = [
   { def: CONNECT_TOOL, handler: () => digConnect() },
   ...createReadTools(),
   ...createWriteTools(),
+  ...createDestructiveTools(),
 ];
 const HANDLERS = new Map(REGISTRY.map((t) => [t.def.name, t.handler]));
 const TOOLS = REGISTRY.map((t) => t.def);
