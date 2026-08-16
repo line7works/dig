@@ -118,7 +118,7 @@ Acceptance criteria:
 Footprint: `plugins/dig/server/`, `plugins/dig/test/`.
 Not in this slice: removal of any kind.
 Depends on: Slice C, Slice D
-Status: built
+Status: signed off
 
 ## Slice F — Destructive operations
 Goal: Removal that cannot fire by accident, cannot wipe a playlist, and can always be rolled back from a local snapshot.
@@ -366,3 +366,36 @@ WAIVED (per user) · 2026-08-15 · MINOR · plugins/dig/server/matching.mjs:250 
 - MAJOR · plugins/dig/server/spotify-client.mjs:59-67 · (60-second wait cap enforced per request, not per tool call) · fixed — one waitBudget() per tool call threaded through every request (read-tools.mjs:327, find-index paging included); probed: first 429 RA=40 honored, second in the same call throws instead of sleeping; single-request RA>60 still stops immediately; budget logic at spotify-client.mjs:68-80
 - MAJOR · plugins/dig/server/error-map.mjs:58 · (/playlist/ substring-matches "/me/playlists" — allowlist 403 got the ownership copy) · fixed — anchored to ^\/playlists\/ at error-map.mjs:61; probed: /me/playlists 403 leads with the allowlist copy, /playlists/{id} keeps the ownership framing
 No fix-introduced defects found; suite 94/94
+
+### 2026-08-15 — review: Slice E
+- BLOCKER · plugins/dig/test/write-tools.test.mjs:132-158 · AC2(a)'s verification is vacuous — the "uncertain" fixture scores REJECTED (title-gate 0.67), questions stays empty, evidence assertions sit behind `if (res.questions.length)` and never run · mutating write-tools.mjs to auto-add UNCERTAIN passes all 13 tests and the full suite · slice E review
+- MAJOR · plugins/dig/server/write-tools.mjs:407 · mid-reorder RateLimitError rethrown to the wrapper's "nothing was lost" boilerplate with moves already applied and no moves_applied count · 150-row reorder 429s at move 40 → playlist scrambled, user told nothing changed · slice E review
+- MAJOR · plugins/dig/server/write-tools.mjs:407 · mid-reorder unknown-outcome failure (timeout/network) → "Dig hit an internal error", no re-read, no partial report — the case R3 says must end in a re-read · slice E review
+- MAJOR · plugins/dig/server/write-tools.mjs:261 · add's catch rethrows only SpotifyApiError, so a RateLimitError on the POST (write definitively not executed) is swallowed, a re-read fires into the active rate limit, and the result says "ambiguous" instead of relaying the wait · slice E review
+- MAJOR · plugins/dig/server/write-tools.mjs:268 · add verification is uri-membership in the re-read window, so a silent-failure add of a track already in the window reports "verified" · re-add a track near its existing copy + silent 200 → false success · slice E review
+- MAJOR · plugins/dig/test/write-tools.test.mjs:245 · reorder's verify-after-write layer unpinned — hardcoding "verified" and deleting the re-read comparison passes 13/13; no reorder silent-failure test exists · slice E review
+- MINOR · plugins/dig/server/write-tools.mjs:246 · result "no_write" is a fifth token outside R3's vocabulary, pinned by tests while the slice's Deviations block says "none" · downstream consumer switching on four values hits a fifth · slice E review
+- MINOR · plugins/dig/server/write-tools.mjs:85 · isConcurrentEditError treats ANY 400/409 on /items as a concurrent edit · a malformed-move regression is reported as "re-plan" instead of the real error · slice E review
+- MINOR · plugins/dig/server/write-tools.mjs:372 · dig_reorder pages the entire playlist via findIndex.get before enforcing MAX_REORDER; total is on the first page · 10k-row playlist costs ~200 serialized GETs to produce a refusal · slice E review
+- MINOR · plugins/dig/server/write-tools.mjs:321 · HTML-unescape replaces &amp; first, double-unescaping literal "&lt;"-like sequences · description containing "&lt;" verifies as "accepted"/masks mismatches · slice E review
+- MINOR · plugins/dig/server/write-tools.mjs:317 · name compared raw while description is unescaped (create's re-read name check too) · renaming to "Dust & Echoes" reports "ambiguous" on a landed write · slice E review
+- MINOR · plugins/dig/server/write-tools.mjs:250 · totalBefore falls back "?? 0" (and the tracks.total fallback can never receive data the fields string didn't request) · projection mismatch turns an explicit position into a top-of-playlist insert reported "verified" · slice E review
+- MINOR · plugins/dig/server/write-tools.mjs:255 · duplicate proposals resolving to one URI are POSTed twice and both report "verified" off one seen-hit · two proposals, one recording → track added twice, reported as two successes · slice E review
+- MINOR · plugins/dig/server/index.mjs:177 · EOF drain callback never fires if the client half-closes stdin but stops reading stdout (immortal orphan); no stdout 'error' handler for EPIPE · slice E review
+- MINOR · plugins/dig/server/write-tools.mjs:377 · empty-playlist reorder message renders "permutation of 0--1" · cosmetic nonsense on n=0 · slice E review
+- MINOR · plugins/dig/server/write-tools.mjs:262 · queue serializes per-request, not per-tool-call: another call's write can interleave between add's POST and its verify re-read, flipping the verdict either way · near-theoretical single-client today, bites under concurrent sessions · slice E review
+- MINOR · plugins/dig/server/write-tools.mjs:143 · create silent-failure path reports "accepted" with a populated playlist object and the re-read failure is swallowed by a bare catch; untested · create that never landed reads like success · slice E review
+- MINOR · plugins/dig/test/write-tools.test.mjs:209 · `doesNotMatch(/retry blindly.*safe/i)` can essentially never match — decorative assertion · slice E review
+- MINOR · plugins/dig/server/write-tools.mjs:392 · reorder proceeds without a snapshot precondition when the pre-read lacks snapshot_id, silently degrading R4 · slice E review
+- MINOR · plugins/dig/server/spotify-client.mjs:98 · non-JSON 2xx body throws a raw SyntaxError, escaping the error-map contract · proxy/captive-portal 200 → "Dig hit an internal error: Unexpected token" · slice E review
+- MINOR · plugins/dig/server/write-tools.mjs:251 · out-of-range add position silently clamped to playlist length instead of reported · slice E review
+- MINOR · plugins/dig/test/write-tools.test.mjs:91 · the mock's insert_before>range_start shift branch is dead relative to the implementation (moves always have insert_before<range_start) — untested surface if composition changes · slice E review
+
+### 2026-08-15 — recheck: Slice E
+- BLOCKER · plugins/dig/test/write-tools.test.mjs:132-158 · (AC2(a)'s verification is vacuous — the "uncertain" fixture scores REJECTED, questions stays empty, evidence assertions sit behind a conditional and never run) · fixed — new fixture (same title/artist, untrusted wrong duration) probed at 0.778 UNCERTAIN with unconditional question-path assertions at write-tools.test.mjs:132-162; mutation auto-adding UNCERTAIN now fails the suite
+- MAJOR · plugins/dig/server/write-tools.mjs:407 · (mid-reorder RateLimitError rethrown to the wrapper's "nothing was lost" boilerplate with moves already applied) · fixed — executed: 429 after move 1 returns partial with moves_applied and the rate-limit message in a re-plan note; catch now at write-tools.mjs:416-434, test at write-tools.test.mjs:351
+- MAJOR · plugins/dig/server/write-tools.mjs:407 · (mid-reorder unknown-outcome failure surfaces "Dig hit an internal error" with no partial report) · fixed — executed: mid-move TypeError returns partial with moves_applied and "could not be confirmed" re-plan guidance; test at write-tools.test.mjs:371
+- MAJOR · plugins/dig/server/write-tools.mjs:261 · (add's catch rethrows only SpotifyApiError, so a RateLimitError on the POST is swallowed and a re-read fires into the active rate limit reporting "ambiguous") · fixed — executed: 429 on the POST surfaces the rate-limit instruction as isError, nothing written; rethrow now covers SpotifyApiError/RateLimitError/AuthExpiredError at write-tools.mjs:267, test at write-tools.test.mjs:273
+- MAJOR · plugins/dig/server/write-tools.mjs:268 · (add verification is uri-membership in the re-read window, so a silent-failure add of a track already in the window reports "verified") · fixed — executed: verification now positional + count-based at write-tools.mjs:272-283; pre-existing copy at the insert position + silent 200 lands "ambiguous", test at write-tools.test.mjs:258
+- MAJOR · plugins/dig/test/write-tools.test.mjs:245 · (reorder's verify-after-write layer unpinned — hardcoding "verified" passes the suite) · fixed — mutation hardcoding the result line now fails the derangement silent-failure test at write-tools.test.mjs:337
+No fix-introduced defects found; suite 113/113
