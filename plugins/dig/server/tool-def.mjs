@@ -8,6 +8,9 @@ const ACCESS_CLASSES = {
   read: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   // Local-only reads (no network): status and similar.
   local: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  // Local-only configuration writes (no network): persists a setting into
+  // Dig's own data directory. Repeating one with the same value is a no-op.
+  configure: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   // Starts the sign-in flow: writes local token state, talks to Spotify.
   connect: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   // Additive writes: create/add/rename/reorder — never removal, so not

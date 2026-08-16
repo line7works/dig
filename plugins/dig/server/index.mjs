@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { log } from "./log.mjs";
 import { STATUS_TOOL, digStatus } from "./status.mjs";
 import { CONNECT_TOOL, digConnect } from "./connect.mjs";
+import { createConfigTools } from "./config-tools.mjs";
 import { createReadTools } from "./read-tools.mjs";
 import { createWriteTools } from "./write-tools.mjs";
 import { createDestructiveTools } from "./destructive-tools.mjs";
@@ -42,13 +43,20 @@ const sharedIndex = new FindIndex(spotify);
 const REGISTRY = [
   { def: STATUS_TOOL, handler: async () => ({ text: digStatus(), isError: false }) },
   { def: CONNECT_TOOL, handler: () => digConnect() },
+  ...createConfigTools({
+    notifyToolsChanged: () => send({ jsonrpc: "2.0", method: "notifications/tools/list_changed" }),
+  }),
   ...createDoctorTool(),
   ...createReadTools({ index: sharedIndex }),
   ...createWriteTools({ index: sharedIndex }),
   ...createDestructiveTools({ index: sharedIndex }),
 ];
-const HANDLERS = new Map(REGISTRY.map((t) => [t.def.name, t.handler]));
-const TOOLS = REGISTRY.map((t) => t.def);
+const ENTRIES = new Map(REGISTRY.map((t) => [t.def.name, t]));
+// An entry may carry `enabled: () => boolean` (the unfollow opt-in); it is
+// re-evaluated on every tools/list and tools/call so an in-session config
+// change takes effect without a restart (slice G2 R3).
+const entryActive = (t) => (t.enabled ? t.enabled() : true);
+const listTools = () => REGISTRY.filter(entryActive).map((t) => t.def);
 
 function send(msg) {
   process.stdout.write(JSON.stringify(msg) + "\n");
@@ -64,7 +72,8 @@ function toolResult(id, text, isError = false) {
 
 async function handleToolCall(id, params) {
   const name = params?.name;
-  const handler = HANDLERS.get(name);
+  const entry = ENTRIES.get(name);
+  const handler = entry && entryActive(entry) ? entry.handler : null;
   if (!handler) {
     // Unknown tool is a host-facing protocol error (-32602), not a
     // model-facing isError result.
@@ -103,7 +112,7 @@ function handle(req) {
       const asked = req.params?.protocolVersion;
       reply(id, {
         protocolVersion: SUPPORTED_PROTOCOLS.includes(asked) ? asked : LATEST_PROTOCOL,
-        capabilities: { tools: {} },
+        capabilities: { tools: { listChanged: true } },
         serverInfo: { name: "dig", version: VERSION },
         instructions: SERVER_INSTRUCTIONS,
       });
@@ -115,7 +124,7 @@ function handle(req) {
       if (id !== undefined) reply(validId(id), {});
       break;
     case "tools/list":
-      reply(id, { tools: TOOLS });
+      reply(id, { tools: listTools() });
       break;
     case "tools/call":
       // Async tools reply when they finish; a rejection still answers.

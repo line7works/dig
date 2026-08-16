@@ -28,7 +28,7 @@ import { FIELDS, extractRows, projectItemRow } from "./projection.mjs";
 import { RateLimitError, SpotifyApiError } from "./error-map.mjs";
 import { AuthExpiredError, dataDir, writeFileAtomic0600 } from "./token-store.mjs";
 import { ValidationError, requireString, wrapTools } from "./read-tools.mjs";
-import { checkClientId } from "./config.mjs";
+import { checkClientId, resolveUnfollowFlag } from "./config.mjs";
 import { log } from "./log.mjs";
 
 const TOKEN_TTL_MS = 15 * 60 * 1000; // a plan the user hasn't approved in 15 minutes is stale
@@ -206,14 +206,12 @@ const DEFINITE = (err) => err instanceof SpotifyApiError || err instanceof RateL
 export function createDestructiveTools({ client = spotify, index, registry, enableUnfollow, now = Date.now } = {}) {
   const findIndex = index ?? new FindIndex(client);
   const plans = registry ?? new PlanRegistry({ now });
-  // The userConfig path (.mcp.json substitution) always defines the primary
-  // env var, possibly blank or as an unsubstituted "${user_config...}"
-  // placeholder — neither may mask the CLAUDE_PLUGIN_OPTION auto-export
-  // fallback (the slice-A config lesson).
-  const unfollowFlag =
-    [process.env.DIG_ENABLE_UNFOLLOW, process.env.CLAUDE_PLUGIN_OPTION_DIG_ENABLE_UNFOLLOW]
-      .find((v) => v && !v.startsWith("${")) ?? "";
-  const unfollowEnabled = enableUnfollow ?? /^(1|true|yes)$/i.test(unfollowFlag.trim());
+  // Opt-in resolution lives in config.mjs (slice G2): env names first —
+  // blank/placeholder primary never masks the auto-export fallback — then
+  // Dig's own config file, so dig_enable_playlist_deletion works without
+  // userConfig. Evaluated PER CALL so an in-session enable takes effect
+  // without a restart; `enableUnfollow` remains the test override.
+  const unfollowEnabled = () => enableUnfollow ?? resolveUnfollowFlag().enabled;
 
   // Read of the playlist for PLANNING (index rebuilds when snapshot_id moved).
   async function readPlaylist(playlistId, budget) {
@@ -679,8 +677,12 @@ export function createDestructiveTools({ client = spotify, index, registry, enab
     },
   ];
 
-  if (unfollowEnabled) {
+  // Registered unconditionally but gated by `enabled`, re-evaluated on every
+  // tools/list and tools/call (slice G2 R3): enabling deletion mid-session
+  // takes effect without a server restart.
+  {
     tools.push({
+      enabled: unfollowEnabled,
       def: defineTool({
         name: "dig_unfollow_playlist",
         title: "Unfollow (delete) a playlist",

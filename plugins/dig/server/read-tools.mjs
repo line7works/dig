@@ -328,7 +328,8 @@ export function createReadTools({ client = spotify, index } = {}) {
 // and every tool call gets ONE wait budget so the R4 60s cap spans every
 // request the invocation makes, not each request separately.
 export function wrapTools(tools) {
-  return tools.map(({ def, handler }) => ({
+  return tools.map(({ def, handler, ...rest }) => ({
+    ...rest, // e.g. `enabled` — the per-call registration gate (slice G2)
     def,
     handler: async (args) => {
       try {

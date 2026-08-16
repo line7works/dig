@@ -36,15 +36,15 @@ export function referencePage() {
   // The whole setup picture at once, read-only, captures nothing (PRD §9).
   return page("Dig setup — Spotify app", `
 <h1>Setting up Dig</h1>
+<p>Dig is something we built for ourselves and like sharing. Everything here — the Spotify app you create, your Client ID, the sign-in — stays on your own computer and talks only to Spotify. Nothing is stored by, or visible to, Line 7 or anyone else.</p>
 <p>Dig needs a free Spotify developer app that belongs to you. The whole thing takes about ten minutes. <strong>You need Spotify Premium</strong> — Spotify requires it for developer apps, and there is no workaround.</p>
 <ol>
-<li><strong>Create the app.</strong> Go to <a href="https://developer.spotify.com/dashboard" rel="noreferrer">developer.spotify.com/dashboard</a>, sign in with your Spotify account, and click <strong>Create app</strong>. Name and description can be anything (e.g. "Dig").</li>
-<li><strong>Paste the redirect address.</strong> In the creation form (or later on the app's <strong>Basic Information</strong> page — scroll down), put exactly this into <strong>Redirect URIs</strong>, then click <strong>Add</strong> and <strong>Save</strong>:<br>
+<li><strong>Create the app.</strong> Go to <a href="https://developer.spotify.com/dashboard" rel="noreferrer">developer.spotify.com/dashboard</a>, sign in with your Spotify account, and click <strong>Create app</strong>. Fill the form top to bottom: <strong>App name</strong> and <strong>App description</strong> can be anything (e.g. "Dig"); <strong>Website</strong> is optional. In <strong>Redirect URIs</strong>, put exactly:<br>
 <code>${escapeHtml(REGISTERED_REDIRECT_URI)}</code><br>
-Character for character — no slash at the end, <code>http</code> not <code>https</code>.</li>
-<li><strong>Copy the Client ID.</strong> It is at the top of your app's <strong>Basic Information</strong> page. Paste it into Claude when Dig asks. <strong>Never paste your Client Secret</strong> — the "View client secret" link sits right underneath and the value looks identical. Dig never needs it.</li>
-<li><strong>Add yourself under User Management.</strong> On your app's page, open the <strong>User Management</strong> tab (next to Basic Information), enter your name and <em>the email address on your Spotify account</em>, and click <strong>Add user</strong>. Your own app can reject you until you do this, and it can take <strong>up to 15 minutes</strong> to take effect. That wait is real — it will not work immediately.</li>
-<li><strong>Sign in.</strong> Back in Claude, ask Dig to connect. Your browser opens a normal Spotify approval screen. After anything changes in Dig's configuration, start a new chat — Dig's tools connect when a chat starts.</li>
+then click <strong>Add</strong>. Character for character — no slash at the end, <code>http</code> not <code>https</code>. Then tick <strong>Web API</strong> under "Which API/SDKs are you planning to use?", tick the checkbox agreeing to Spotify's Developer Terms, and click <strong>Save</strong> at the bottom.</li>
+<li><strong>Copy the Client ID.</strong> It is at the top of your app's <strong>Basic Information</strong> page, with a copy button. Paste it into the Claude chat — Dig stores it for you and it works immediately. <strong>Never paste your Client Secret</strong> — the "View client secret" link sits right underneath and the value looks identical. Dig never needs it.</li>
+<li><strong>Add yourself under User Management.</strong> Don't navigate away — on the same page, open the <strong>User Management</strong> tab (next to Basic Information), enter your name and <em>the email address on your Spotify account</em>, and click <strong>Add user</strong>. Your own app can reject you until you do this, and it can take <strong>up to 15 minutes</strong> to take effect. That wait is real — it will not work immediately.</li>
+<li><strong>Sign in.</strong> Back in Claude, ask Dig to connect. Your browser opens a normal Spotify approval screen.</li>
 </ol>
 <p>This page is served by Dig on your own computer. It is read-only and collects nothing.</p>`);
 }

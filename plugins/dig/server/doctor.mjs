@@ -12,6 +12,7 @@ import { RateLimitError, SpotifyApiError } from "./error-map.mjs";
 import { spotify, waitBudget } from "./spotify-client.mjs";
 import { activeSignIn } from "./auth.mjs";
 import { REGISTERED_REDIRECT_URI } from "./callback.mjs";
+import { describeSource } from "./status.mjs";
 
 export const DOCTOR_TOOL = defineTool({
   name: "dig_doctor",
@@ -49,12 +50,21 @@ export function createDoctorTool({ client = spotify, deps = {} } = {}) {
     // 1. Client ID
     const id = check();
     if (id.state !== "ok") {
-      lines.push(BAD(id.state === "invalid" ? "Client ID: configured but the wrong shape." : "Client ID: not configured."));
+      lines.push(
+        BAD(
+          id.state === "invalid"
+            ? `Client ID: configured but the wrong shape (source: ${describeSource(id.source)}).`
+            : "Client ID: not configured (no plugin setting, nothing in Dig's config file).",
+        ),
+      );
       lines.push("", id.message);
       lines.push("", "The remaining checks need a Client ID, so the doctor stopped here.");
       return { text: lines.join("\n"), isError: false };
     }
-    lines.push(OK("Client ID: configured and looks valid (32 characters)."));
+    lines.push(OK(`Client ID: configured and looks valid (32 characters). Source: ${describeSource(id.source)}.`));
+    if (id.mismatch) {
+      lines.push("  ⚠ The plugin's settings and Dig's own config file hold DIFFERENT Client IDs — the plugin settings win. If that's not what you want, clear the plugin setting or set the right ID with dig_set_client_id.");
+    }
 
     // 2. Stored connection
     const record = readToken();

@@ -16,9 +16,11 @@ async function listTools(extraEnv) {
   const env = {
     ...process.env,
     SPOTIFY_CLIENT_ID: "a".repeat(32),
-    // Neutralize ambient opt-ins so each case controls both names fully.
+    // Neutralize ambient opt-ins so each case controls both names fully —
+    // including the slice-G2 config-file fallback (blank data dir = no file).
     DIG_ENABLE_UNFOLLOW: "",
     CLAUDE_PLUGIN_OPTION_DIG_ENABLE_UNFOLLOW: "",
+    CLAUDE_PLUGIN_DATA: "",
     ...extraEnv,
   };
   const child = spawn(process.execPath, [SERVER], { env, stdio: ["pipe", "pipe", "pipe"] });
@@ -76,6 +78,23 @@ test("an unsubstituted placeholder primary does not mask a truthful fallback", a
 test("a non-truthy value does not enable it", async () => {
   const names = await listTools({ DIG_ENABLE_UNFOLLOW: "false" });
   assert.ok(!names.includes("dig_unfollow_playlist"));
+});
+
+test("config-file fallback (slice G2): flag in Dig's config.json enables it when both env names are blank", async () => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const dir = mkdtempSync(join(tmpdir(), "dig-unfollow-"));
+  try {
+    writeFileSync(join(dir, "config.json"), JSON.stringify({ dig_enable_unfollow: "true" }), { mode: 0o600 });
+    const names = await listTools({ CLAUDE_PLUGIN_DATA: dir });
+    assert.ok(names.includes("dig_unfollow_playlist"), `missing from: ${names}`);
+    // Env wins over the file: an explicit "false" in env disables despite the file.
+    const offNames = await listTools({ CLAUDE_PLUGIN_DATA: dir, DIG_ENABLE_UNFOLLOW: "false" });
+    assert.ok(!offNames.includes("dig_unfollow_playlist"), "env false must win over file true");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("plugin.json declares the dig_enable_unfollow field with the deletion warning", async () => {

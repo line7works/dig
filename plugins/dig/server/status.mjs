@@ -16,6 +16,13 @@ export const STATUS_TOOL = defineTool({
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
 });
 
+// Names the active config source (slice G2 R4) in user language: "env" is
+// the plugin's settings (userConfig substitution / auto-export), "file" is
+// Dig's own config file written by dig_set_client_id.
+export function describeSource(source) {
+  return source === "env" ? "plugin settings" : source === "file" ? "Dig's config file (set in chat)" : "none";
+}
+
 function describeDataDir() {
   const dir = process.env.CLAUDE_PLUGIN_DATA;
   if (!dir) {
@@ -40,9 +47,16 @@ export function digStatus() {
   const id = checkClientId();
   const lines = [];
   if (id.state === "ok") {
-    lines.push("Client ID: configured and looks valid (32 characters).");
+    lines.push(`Client ID: configured and looks valid (32 characters). Source: ${describeSource(id.source)}.`);
+    if (id.mismatch) {
+      lines.push("⚠ The plugin's settings and Dig's own config file hold DIFFERENT Client IDs — the plugin settings win. If that's not what you want, clear the plugin setting or set the right ID with dig_set_client_id.");
+    }
   } else {
-    lines.push(id.state === "invalid" ? "Client ID: configured but wrong shape." : "Client ID: not configured.");
+    lines.push(
+      id.state === "invalid"
+        ? `Client ID: configured but wrong shape. Source: ${describeSource(id.source)}.`
+        : "Client ID: not configured (no plugin setting, nothing in Dig's config file).",
+    );
     lines.push("", id.message, "");
   }
   lines.push(describeAuth());

@@ -370,11 +370,22 @@ test("dig_apply_removal declares _meta anthropic/requiresUserInteraction", async
 
 // ---------- R6 / AC3: unfollow is absent until opted in ----------
 
-test("dig_unfollow_playlist absent from registration by default", async () => {
+test("dig_unfollow_playlist gated off by default (slice G2: registered but enabled() false)", async () => {
+  // Registration is dynamic since slice G2: the entry always exists so an
+  // in-session enable can surface it, and the `enabled` predicate is what
+  // tools/list and tools/call honor. Absence from the actual tool list is
+  // proven at the real server boundary in unfollow-config.test.mjs.
   delete process.env.DIG_ENABLE_UNFOLLOW;
+  delete process.env.CLAUDE_PLUGIN_OPTION_DIG_ENABLE_UNFOLLOW;
   const tools = createDestructiveTools({ client: {}, index: new FindIndex({}) });
-  assert.equal(tools.some((t) => t.def.name === "dig_unfollow_playlist"), false);
-  assert.deepEqual(tools.map((t) => t.def.name), ["dig_plan_removal", "dig_apply_removal", "dig_restore_snapshot"]);
+  const unfollow = tools.find((t) => t.def.name === "dig_unfollow_playlist");
+  assert.ok(unfollow, "entry must be registered so an in-session enable can surface it");
+  assert.equal(typeof unfollow.enabled, "function");
+  assert.equal(unfollow.enabled(), false, "must be gated off with no opt-in anywhere");
+  assert.deepEqual(
+    tools.filter((t) => !t.enabled || t.enabled()).map((t) => t.def.name),
+    ["dig_plan_removal", "dig_apply_removal", "dig_restore_snapshot"],
+  );
 });
 
 test("dig_unfollow_playlist registered when opted in, and is two-step with a snapshot", async () => {
