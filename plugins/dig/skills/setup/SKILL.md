@@ -11,8 +11,8 @@ ask them to open a terminal or edit a file. Dashboard URLs, button names, and
 the form's field order below were verified against the live Spotify dashboard
 on 2026-08-16 — use them exactly; do not improvise instructions from memory.
 
-Start with this, in your own warm words: **Dig is something we built for
-ourselves and like sharing.** Everything in this setup — the Spotify app they
+Start with this, in your own warm words: **Dig is something we made at Line 7
+for our own use, and like sharing.** Everything in this setup — the Spotify app they
 create, the Client ID, the sign-in — lives on their own computer and talks
 only to Spotify. Nothing is stored by, or visible to, Line 7 or anyone else.
 

@@ -36,7 +36,7 @@ export function referencePage() {
   // The whole setup picture at once, read-only, captures nothing (PRD §9).
   return page("Dig setup — Spotify app", `
 <h1>Setting up Dig</h1>
-<p>Dig is something we built for ourselves and like sharing. Everything here — the Spotify app you create, your Client ID, the sign-in — stays on your own computer and talks only to Spotify. Nothing is stored by, or visible to, Line 7 or anyone else.</p>
+<p>Dig is something we made at Line 7 for our own use, and like sharing. Everything here — the Spotify app you create, your Client ID, the sign-in — stays on your own computer and talks only to Spotify. Nothing is stored by, or visible to, Line 7 or anyone else.</p>
 <p>Dig needs a free Spotify developer app that belongs to you. The whole thing takes about ten minutes. <strong>You need Spotify Premium</strong> — Spotify requires it for developer apps, and there is no workaround.</p>
 <ol>
 <li><strong>Create the app.</strong> Go to <a href="https://developer.spotify.com/dashboard" rel="noreferrer">developer.spotify.com/dashboard</a>, sign in with your Spotify account, and click <strong>Create app</strong>. Fill the form top to bottom: <strong>App name</strong> and <strong>App description</strong> can be anything (e.g. "Dig"); <strong>Website</strong> is optional. In <strong>Redirect URIs</strong>, put exactly:<br>

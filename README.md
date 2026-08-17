@@ -11,8 +11,8 @@ have Premium, Dig cannot work for you.
 
 Everything runs on your own computer and talks only to Spotify. Nothing you
 do — your playlists, your account, your sign-in — is stored by or visible to
-Line 7 or anyone else. Dig is something we built for ourselves and like
-sharing.
+Line 7 or anyone else. Dig is something we made at Line 7 for our own use,
+and like sharing.
 
 ## What you need
 
